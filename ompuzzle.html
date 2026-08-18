@@ -51,7 +51,7 @@
 				top: 10px;
 				left: 265px;
 				width: 800px;
-				height: 600px;
+				height: 700px;
 				overflow: scroll;
 			}
 			#meta {
@@ -60,7 +60,7 @@
 				top: 10px;
 				left: 10px;
 				width: 260px;
-				height: 100px;
+				height: 115px;
 			}
 			#meta input {
 				font-size: 14px;
@@ -68,7 +68,7 @@
 			}
 			#savelink {
 				position: absolute;
-				top: 585px;
+				top: 632px;
 				left: 10px;
 				width: 240px;
 				text-align: center;
@@ -79,7 +79,7 @@
 			#toolbox-title {
 				font-size: 18px;
 				position: absolute;
-				top: 71px;
+				top: 127px;
 				left: 10px;
 				width: 230px;
 				text-align: center;
@@ -87,7 +87,7 @@
 			}
 			#toolbox {
 				position: absolute;
-				top: 95px;
+				top: 152px;
 				left: 10px;
 				width: 230px;
 				height: 241px;
@@ -118,7 +118,7 @@
 			}
 			#molecules {
 				position: absolute;
-				top: 355px;
+				top: 400px;
 				left: 10px;
 				width: 250px;
 				height: 200px;
@@ -207,7 +207,7 @@
 				top: 8px;
 				left: 1080px;
 				width: 170px;
-				height: 600px;
+				height: 700px;
 			}
 			#inst-title {
 				font-size: 18px;
@@ -222,8 +222,8 @@
 				position: absolute;
 				top: 30px;
 				left: 0px;
-				width: 140px;
-				height: 560px;
+				width: 154px;
+				height: 660px;
 				border: solid 2px #cccccc;
 				padding: 2px;
 			}
@@ -347,7 +347,7 @@
 
 			#tab-switch {
 				position: absolute;
-				top: 565px;
+				top: 612px;
 				left: 10px;
 				width: 240px;
 				text-align: center;
@@ -370,7 +370,7 @@
 				margin-left: auto;
 				margin-right: auto;
 				clear: both;
-				top: 680px;
+				top: 780px;
 				width: 800px;
 				font-size: 18px;
 			}
@@ -386,6 +386,9 @@
 			/* SVG End */
 			.disred {
 				color: rgba(255, 155, 155, 0.7);
+			}
+			#say-english {
+				display: none;
 			}
 			#invisible-area {
 				display: none;
@@ -421,7 +424,8 @@
 			<div id="research-area-left">
 				<div id="meta">
 					<span id="puzzle-name-label">Puzzle Name: </span><input type="text" value="" id="puzzle-name" /><br />
-					<span id="steam-id-label">Steam ID: </span><input type="text" value="" id="steam-id" />
+					<span id="steam-id-label">Steam ID: </span><input type="text" value="" id="steam-id" /><br />
+					<span id="puzzle-id-label">Puzzle ID: </span><input type="text" value="" id="puzzle-id" />
 				</div>
 				<div id="toolbox-title">TOOLBOX</div>
 				<div id="toolbox">
@@ -484,13 +488,6 @@
 			</div>
 		</div>
 		<div id="disclaimer">
-			<p>Update 2018/4/8 - 4/9:</p>
-			<p>
-				Added Production mode.<br />
-				Click "Production" to switch to production tab, and check Production Mode to activate.<br />
-				If you encounter a bug, please tell me in steam or discord.
-			</p>
-			<hr />
 			<p>Important Notes:</p>
 			<p>
 				Do note that malformed puzzles created with this tool may <span class="disred">crash the game</span>.<br />
@@ -510,7 +507,7 @@
 				Also, custom puzzle files are located in My Documents\My Games\Opus Magnum\[steam ID]\custom\.<br />
 				Credits to d3js, jsbn and Aperture's steam guide.
 			</p>
-			<p><a id="say-chinese">&#35828;&#20013;&#25991;</a></p>
+			<p><a id="say-chinese">&#35828;&#20013;&#25991;</a> | <a id="say-english">English</a></p>
 		</div>
 		<script>
 			init();

@@ -36,12 +36,16 @@ function init() {
 			"animismus" : false,
 			"disposal" : false,
 			"quintessence" : false,
+			"division" : false,
+			"rejection" : false,
+			"proliferation" : false,
 			"grabturn" : true,
 			"drop" : true,
 			"turnback" : true,
 			"repeat" : true,
 			"pivot" : true,
-			"berlo" : false
+			"berlo" : false,
+			"ravari" : false
 		},
 		"reagents" : [{
 			"primes" : [{

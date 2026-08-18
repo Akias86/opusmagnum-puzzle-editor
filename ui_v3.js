@@ -96,7 +96,7 @@ function generateField(bg) {
 
 	// scroll the container to the center of board
 	var containerWidth = 800;
-	var containerHeight = 600;
+	var containerHeight = 700;
 	d3.select("#transmutation").property("scrollTop", svgHeight / 2 - containerHeight / 2).property("scrollLeft", svgWidth / 2 - containerWidth / 2);
 
 	// background primes
@@ -430,8 +430,9 @@ function notRandom(str1, str2) {
 
 // create binary file from "Puzzle" object
 function makePuzzleFile() {
-	var num = notRandom(gPuzzleObj.steamID, gPuzzleObj.name);
-	saveFile(constructFile(gPuzzleObj), "c" + num + ".puzzle", "application/opus-magnum-puzzle");
+	var pid = $I("puzzle-id").value.trim();
+	var fn = pid ? (pid + ".puzzle") : ("c" + notRandom(gPuzzleObj.steamID, gPuzzleObj.name) + ".puzzle");
+	saveFile(constructFile(gPuzzleObj), fn, "application/opus-magnum-puzzle");
 	// save steamID into localstorage, in case i want to share this with someone else
 	try {
 		localStorage.setItem("steamID-of-this-player", gPuzzleObj.steamID);
@@ -484,6 +485,7 @@ function toolboxDrop(d) {
 	catch(c) {
 		return;
 	}
+	setPuzzleIDFromFile(file);
 
 	// load the file
 	try {
@@ -496,7 +498,19 @@ function toolboxDrop(d) {
 // input file load handler
 function inputFileLoad(d) {
 	try {
-		loadFile(d3.event.target.files[0]);
+		var file = d3.event.target.files[0];
+		setPuzzleIDFromFile(file);
+		loadFile(file);
+	}
+	catch(c) {
+	}
+}
+
+// extract puzzle ID from the file name (base name without extension), if any
+function setPuzzleIDFromFile(fp) {
+	try {
+		var m = /^(.+)\.puzzle$/.exec(fp.name);
+		$I("puzzle-id").value = m ? m[1] : "";
 	}
 	catch(c) {
 	}

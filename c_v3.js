@@ -25,7 +25,7 @@ function Inst(instArray) {
 }
 
 // common inst types
-Inst.instlist = ["arm", "multiarm", "piston", "track", "bonding", "unbonding", "multibonding", "triplex", "calcification", "duplication", "projection", "purification", "animismus", "disposal", "quintessence", "grabturn", "drop", "turnback", "repeat", "pivot", "berlo"];
+Inst.instlist = ["arm", "multiarm", "piston", "track", "bonding", "unbonding", "multibonding", "triplex", "calcification", "duplication", "projection", "purification", "animismus", "disposal", "quintessence", "division", "rejection", "proliferation", "grabturn", "drop", "turnback", "repeat", "pivot", "berlo", "ravari"];
 Inst.all = function() {
 	return new Inst(Inst.instlist);
 };
@@ -138,12 +138,16 @@ function instBinary(inst) {
 	        0x01 * inst.animismus
 	      + 0x02 * inst.disposal
 	      + 0x04 * inst.quintessence
+	      + 0x08 * inst.division
+	      + 0x10 * inst.rejection
+	      + 0x20 * inst.proliferation
 	      + 0x40 * inst.grabturn
 	      + 0x80 * inst.drop,
 	        0x01 * inst.turnback
 	      + 0x02 * inst.repeat
 	      + 0x04 * inst.pivot
-	      + 0x10 * inst.berlo];
+	      + 0x10 * inst.berlo
+	      + 0x20 * inst.ravari];
 }
 
 // convert Molecule objects to binary data. returns array
@@ -361,12 +365,16 @@ function instParse(ia) {
 		"animismus"      : !!(0x01 & ia[2]),
 		"disposal"       : !!(0x02 & ia[2]),
 		"quintessence"   : !!(0x04 & ia[2]),
+		"division"       : !!(0x08 & ia[2]),
+		"rejection"      : !!(0x10 & ia[2]),
+		"proliferation"  : !!(0x20 & ia[2]),
 		"grabturn"       : !!(0x40 & ia[2]),
 		"drop"           : !!(0x80 & ia[2]),
 		"turnback"       : !!(0x01 & ia[3]),
 		"repeat"         : !!(0x02 & ia[3]),
 		"pivot"          : !!(0x04 & ia[3]),
-		"berlo"          : !!(0x10 & ia[3])
+		"berlo"          : !!(0x10 & ia[3]),
+		"ravari"         : !!(0x20 & ia[3])
 	};
 }
 
