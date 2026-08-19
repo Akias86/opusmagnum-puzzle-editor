@@ -134,6 +134,7 @@ function init() {
 	updateTextInputs();
 
 	generateField(gBgMolecule);
+	initTransmutationPan();
 	generateMetaCallbacks();
 	generateToolbox();
 

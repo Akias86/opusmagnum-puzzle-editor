@@ -529,6 +529,45 @@ function loadFile(fp) {
 	fr.readAsArrayBuffer(fp);
 }
 
+// right-button drag to pan the transmutation field
+function initTransmutationPan() {
+	var pan = {
+		"active" : false,
+		"startX" : 0,
+		"startY" : 0,
+		"startScrollLeft" : 0,
+		"startScrollTop" : 0
+	};
+	var container = $I("transmutation");
+	container.addEventListener("mousedown", function(e) {
+		if(e.button != 2) {
+			return;
+		}
+		e.preventDefault();
+		pan.active = true;
+		pan.startX = e.clientX;
+		pan.startY = e.clientY;
+		pan.startScrollLeft = container.scrollLeft;
+		pan.startScrollTop = container.scrollTop;
+	});
+	window.addEventListener("mousemove", function(e) {
+		if(!pan.active) {
+			return;
+		}
+		e.preventDefault();
+		container.scrollLeft = pan.startScrollLeft - (e.clientX - pan.startX);
+		container.scrollTop = pan.startScrollTop - (e.clientY - pan.startY);
+	});
+	window.addEventListener("mouseup", function(e) {
+		if(pan.active) {
+			pan.active = false;
+		}
+	});
+	container.addEventListener("contextmenu", function(e) {
+		e.preventDefault();
+	});
+}
+
 // resize function
 // contentSize in px, moleculeSize in molecule count
 function resizeField(contentSize, moleculeSize) {
