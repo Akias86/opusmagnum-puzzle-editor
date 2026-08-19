@@ -5,6 +5,11 @@ var svgHeight = 2400;//d3.select("#transmutation").node().offsetHeight;
 var svgContentSize = 2400;
 var scale = d3.scaleLinear().domain([0,svgContentSize]).range([0, Math.min(svgHeight * 4/3, svgWidth)]).nice();
 
+// camera state: pixel position of the hex origin (0,0) inside the transmutation
+// viewport. the board is conceptually infinite; these offsets pan the camera.
+var gCameraX = 0;
+var gCameraY = 0;
+
 // prime/bond image files
 function primeImg(d) {
 	return "img/" + d.type + ".png";
@@ -22,30 +27,32 @@ function bondImg(d) {
 	return "img/" + (d.type.r ? "r" : "") + (d.type.k ? "k" : "") + (d.type.y ? "y" : "") + ".png";
 }
 
-// prime/bond transformation functions
+// prime/bond transformation functions. coordinates are relative to the hex
+// origin (0,0); the root group is translated by the camera, so panning never
+// repositions content and the board can extend infinitely.
 var primeX = function(d) {
-	return scale(60 * d.x + 30 * d.y + svgContentSize/2 - 20);
+	return 60 * d.x + 30 * d.y - 20;
 };
 var primeY = function(d) {
-	return scale(0.9 * 60 * -d.y + svgContentSize/2 - 20);
+	return 0.9 * 60 * -d.y - 20;
 };
 var bondWidth = 27;
 var bondHeight = 18;
 var bondX = function(d) {
-	return scale(60 * (d.x1 + d.x2) / 2 + 30 * (d.y1 + d.y2) / 2 + svgContentSize/2 - bondWidth/2);
+	return 60 * (d.x1 + d.x2) / 2 + 30 * (d.y1 + d.y2) / 2 - bondWidth/2;
 };
 var bondY = function(d) {
-	return scale(0.9 * 60 * -(d.y1 + d.y2) / 2 + svgContentSize/2 - bondHeight/2 - 1);
+	return 0.9 * 60 * -(d.y1 + d.y2) / 2 - bondHeight/2 - 1;
 };
 var bondTransform = function(d) {
 	if(d.y2 == d.y1) {
 		return "";
 	}
 	else if(d.y2 != d.y1 && d.x2 != d.x1) {
-		return "rotate(60 " + (bondX(d) + scale(bondWidth/2)) + " " + (bondY(d) + scale(bondHeight/2)) + ")";
+		return "rotate(60 " + (bondX(d) + bondWidth/2) + " " + (bondY(d) + bondHeight/2) + ")";
 	}
 	else {
-		return "rotate(120 " + (bondX(d) + scale(bondWidth/2)) + " " + (bondY(d) + scale(bondHeight/2)) + ")";
+		return "rotate(120 " + (bondX(d) + bondWidth/2) + " " + (bondY(d) + bondHeight/2) + ")";
 	}
 };
 
@@ -79,34 +86,49 @@ var eventNothing = function() {
 	d3.event.preventDefault();
 };
 
-// init field
-function generateField(bg) {
+// size of the transmutation viewport (the scroll container)
+function transmutationViewSize() {
+	var c = $I("transmutation");
+	return {"w" : c.clientWidth, "h" : c.clientHeight};
+}
 
-	var backgroundObj = bg;
+// render only the background hexes visible under the current camera, so the
+// board can extend infinitely without ever building a large DOM.
+function renderBackgroundWindow() {
+	var size = transmutationViewSize();
+	var margin = 120;
 
-	// summon svg element
-	var svg = d3.select("#transmutation-svg").attr("width",svgWidth).attr("height",svgHeight)
-	.style("position", "absolute")
-	.style("left", "0px")
-	.style("top", "0px")
-	.on("dragstart", eventNothing)
-	.on("drag", eventNothing)
-	.on("dragend", eventNothing)
-	.on("dragout", eventNothing);
+	// visible rectangle in camera space (hex origin at 0,0)
+	var left = -gCameraX - margin;
+	var right = (size.w - gCameraX) + margin;
+	var top = -gCameraY - margin;
+	var bottom = (size.h - gCameraY) + margin;
 
-	// scroll the container to the center of board
-	var containerWidth = 800;
-	var containerHeight = 700;
-	d3.select("#transmutation").property("scrollTop", svgHeight / 2 - containerHeight / 2).property("scrollLeft", svgWidth / 2 - containerWidth / 2);
+	// pixel mapping: px' = 60x + 30y, py' = -54y
+	// inverse: y = -py'/54, x = (px' - 30y)/60
+	var y0 = Math.ceil(-bottom / 54);
+	var y1 = Math.floor(-top / 54);
+
+	var primes = [];
+	for(var y = y0; y <= y1; y++) {
+		var x0 = Math.ceil((left - 30 * y) / 60);
+		var x1 = Math.floor((right - 30 * y) / 60);
+		for(var x = x0; x <= x1; x++) {
+			primes.push(new Prime("salt", x, y));
+		}
+	}
+	var bgMolecule = new Molecule(primes, fullBond(primes));
+
+	var layer = d3.select("#transmutation-bg");
 
 	// background primes
-	var svgBackgroundPrimes = svg.selectAll(".bpr")
-	.data(backgroundObj.primes)
-	.enter()
-	.append("image")
+	var bp = layer.selectAll(".bpr").data(bgMolecule.primes, function(d) { return d.x + "," + d.y; });
+	bp.attr("x", primeX).attr("y", primeY);
+	bp.exit().remove();
+	bp.enter().append("image")
 	.attr("class", "bpr")
-	.attr("width", scale(40))
-	.attr("height", scale(40))
+	.attr("width", 40)
+	.attr("height", 40)
 	.attr("x", primeX)
 	.attr("y", primeY)
 	.attr("xlink:href", function(d) {
@@ -119,18 +141,61 @@ function generateField(bg) {
 	.on("click", bprimeClick);
 
 	// background bonds
-	var svgBackgroundPrimes = svg.selectAll(".bbo")
-	.data(backgroundObj.bonds)
-	.enter()
-	.append("image")
+	var bb = layer.selectAll(".bbo").data(bgMolecule.bonds, function(d) { return d.x1 + "," + d.y1 + "-" + d.x2 + "," + d.y2; });
+	bb.attr("x", bondX).attr("y", bondY).attr("transform", bondTransform);
+	bb.exit().remove();
+	bb.enter().append("image")
 	.attr("class", "bbo")
 	.attr("xlink:href", "img/bbond.png")
 	.attr("x", bondX)
 	.attr("y", bondY)
 	.attr("transform", bondTransform)
-	.attr("width", scale(bondWidth))
-	.attr("height", scale(bondHeight))
+	.attr("width", bondWidth)
+	.attr("height", bondHeight)
 	.on("click", bbondClick);
+}
+
+// move the camera and redraw the visible background window
+function applyCamera() {
+	d3.select("#transmutation-root").attr("transform", "translate(" + gCameraX + "," + gCameraY + ")");
+	renderBackgroundWindow();
+}
+
+// init field
+function generateField(bg) {
+	var size = transmutationViewSize();
+
+	// start with the hex origin centered in the viewport
+	gCameraX = size.w / 2;
+	gCameraY = size.h / 2;
+
+	// summon svg element (sized to the viewport; the camera pans the content)
+	var svg = d3.select("#transmutation-svg").attr("width", size.w).attr("height", size.h)
+	.style("position", "absolute")
+	.style("left", "0px")
+	.style("top", "0px")
+	.on("dragstart", eventNothing)
+	.on("drag", eventNothing)
+	.on("dragend", eventNothing)
+	.on("dragout", eventNothing);
+
+	// root group holds all board content and is translated by the camera
+	var root = d3.select("#transmutation-root");
+	if(root.empty()) {
+		root = svg.append("g").attr("id", "transmutation-root");
+	}
+	root.attr("transform", "translate(" + gCameraX + "," + gCameraY + ")");
+
+	// two layers keep z-order stable while panning: background always behind
+	// molecules, even though the background window is rebuilt on every pan.
+	if(d3.select("#transmutation-bg").empty()) {
+		root.append("g").attr("id", "transmutation-bg");
+	}
+	if(d3.select("#transmutation-molecules").empty()) {
+		root.append("g").attr("id", "transmutation-molecules");
+	}
+
+	renderBackgroundWindow();
 }
 
 // toolbox event callbacks.
@@ -304,8 +369,8 @@ function updateMolecule(molecule) {
 	gMoleculeObj = molecule;
 	updateHighlightedMolecule();
 
-	// summon svg element
-	var svg = d3.select("#transmutation-svg");
+	// summon molecule layer (drawn above the background layer)
+	var svg = d3.select("#transmutation-molecules");
 
   // update primes
   var svgPrimes = svg.selectAll(".pr").data(gMoleculeObj.primes);
@@ -531,14 +596,14 @@ function loadFile(fp) {
 	fr.readAsArrayBuffer(fp);
 }
 
-// right-button drag to pan the transmutation field
+// right-button drag (or mouse wheel) to pan the infinite transmutation field
 function initTransmutationPan() {
 	var pan = {
 		"active" : false,
 		"startX" : 0,
 		"startY" : 0,
-		"startScrollLeft" : 0,
-		"startScrollTop" : 0
+		"camX" : 0,
+		"camY" : 0
 	};
 	var container = $I("transmutation");
 	container.addEventListener("mousedown", function(e) {
@@ -549,16 +614,17 @@ function initTransmutationPan() {
 		pan.active = true;
 		pan.startX = e.clientX;
 		pan.startY = e.clientY;
-		pan.startScrollLeft = container.scrollLeft;
-		pan.startScrollTop = container.scrollTop;
+		pan.camX = gCameraX;
+		pan.camY = gCameraY;
 	});
 	window.addEventListener("mousemove", function(e) {
 		if(!pan.active) {
 			return;
 		}
 		e.preventDefault();
-		container.scrollLeft = pan.startScrollLeft - (e.clientX - pan.startX);
-		container.scrollTop = pan.startScrollTop - (e.clientY - pan.startY);
+		gCameraX = pan.camX + (e.clientX - pan.startX);
+		gCameraY = pan.camY + (e.clientY - pan.startY);
+		applyCamera();
 	});
 	window.addEventListener("mouseup", function(e) {
 		if(pan.active) {
@@ -568,21 +634,16 @@ function initTransmutationPan() {
 	container.addEventListener("contextmenu", function(e) {
 		e.preventDefault();
 	});
+	container.addEventListener("wheel", function(e) {
+		e.preventDefault();
+		gCameraX -= e.deltaX;
+		gCameraY -= e.deltaY;
+		applyCamera();
+	});
 }
 
-// resize function
-// contentSize in px, moleculeSize in molecule count
+// resize function (kept for compatibility: recenters the camera and redraws)
 function resizeField(contentSize, moleculeSize) {
-	// reset the constant and scale
-	svgContentSize = contentSize;
-	scale = d3.scaleLinear().domain([0,svgContentSize]).range([0, Math.min(svgHeight * 4/3, svgWidth)]).nice();
-
-	// remove everything
-	var svg = d3.select("#transmutation-svg");
-	svg.selectAll("*").remove();
-
-	// recreate everything
-	gBgMolecule = generateBGMolecule(moleculeSize);
 	generateField(gBgMolecule);
 	updateMolecule(gPuzzleObj.outputs[0] || new Molecule());
 }

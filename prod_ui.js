@@ -87,6 +87,7 @@ function vialY(d) {
 function showResearchTab() {
     d3.selectAll("#research-area-left,#transmutation-svg").style("display","block");
     d3.selectAll("#production-area,#production-svg").style("display","none");
+    d3.select("#transmutation").style("overflow", "hidden");
     gEditMode = {
         "research" : true,
         "production" : false,
@@ -100,6 +101,7 @@ function showResearchTab() {
 function showProductionTab() {
     d3.selectAll("#research-area-left,#transmutation-svg").style("display","none");
     d3.selectAll("#production-area,#production-svg").style("display","block");
+    d3.select("#transmutation").style("overflow", "scroll");
     gEditMode = {
         "research" : false,
         "production" : true,
