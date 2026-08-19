@@ -10,6 +10,12 @@ var scale = d3.scaleLinear().domain([0,svgContentSize]).range([0, Math.min(svgHe
 var gCameraX = 0;
 var gCameraY = 0;
 
+// the puzzle file format stores each coordinate as a signed byte, so the board
+// can only represent coordinates in [-128, 127]; grid cells outside this range
+// are never rendered, which also keeps newly placed atoms in bounds.
+var gGridMinCoord = -128;
+var gGridMaxCoord = 127;
+
 // prime/bond image files
 function primeImg(d) {
 	return "img/" + d.type + ".png";
@@ -93,7 +99,10 @@ function transmutationViewSize() {
 }
 
 // render only the background hexes visible under the current camera, so the
-// board can extend infinitely without ever building a large DOM.
+// board can extend infinitely without ever building a large DOM. the emitted
+// hexes are clamped to the file format's coordinate range (gGridMinCoord..
+// gGridMaxCoord), so beyond that range nothing is drawn and no atoms can be
+// placed there.
 function renderBackgroundWindow() {
 	var size = transmutationViewSize();
 	var margin = 120;
@@ -106,13 +115,15 @@ function renderBackgroundWindow() {
 
 	// pixel mapping: px' = 60x + 30y, py' = -54y
 	// inverse: y = -py'/54, x = (px' - 30y)/60
-	var y0 = Math.ceil(-bottom / 54);
-	var y1 = Math.floor(-top / 54);
+	// clamp to the representable coordinate range so no grid cells show outside
+	// the file format's signed-byte limits ([-128, 127]).
+	var y0 = Math.max(gGridMinCoord, Math.ceil(-bottom / 54));
+	var y1 = Math.min(gGridMaxCoord, Math.floor(-top / 54));
 
 	var primes = [];
 	for(var y = y0; y <= y1; y++) {
-		var x0 = Math.ceil((left - 30 * y) / 60);
-		var x1 = Math.floor((right - 30 * y) / 60);
+		var x0 = Math.max(gGridMinCoord, Math.ceil((left - 30 * y) / 60));
+		var x1 = Math.min(gGridMaxCoord, Math.floor((right - 30 * y) / 60));
 		for(var x = x0; x <= x1; x++) {
 			primes.push(new Prime("salt", x, y));
 		}
@@ -159,6 +170,14 @@ function renderBackgroundWindow() {
 function applyCamera() {
 	d3.select("#transmutation-root").attr("transform", "translate(" + gCameraX + "," + gCameraY + ")");
 	renderBackgroundWindow();
+}
+
+// re-center the camera on the hex origin (0,0), i.e. the middle of the viewport
+function centerCamera() {
+	var size = transmutationViewSize();
+	gCameraX = size.w / 2;
+	gCameraY = size.h / 2;
+	applyCamera();
 }
 
 // init field
@@ -603,7 +622,9 @@ function initTransmutationPan() {
 		"startX" : 0,
 		"startY" : 0,
 		"camX" : 0,
-		"camY" : 0
+		"camY" : 0,
+		"scrollLeft" : 0,
+		"scrollTop" : 0
 	};
 	var container = $I("transmutation");
 	container.addEventListener("mousedown", function(e) {
@@ -614,17 +635,32 @@ function initTransmutationPan() {
 		pan.active = true;
 		pan.startX = e.clientX;
 		pan.startY = e.clientY;
-		pan.camX = gCameraX;
-		pan.camY = gCameraY;
+		if(gEditMode.production) {
+			// production board is a scrollable svg: right-drag scrolls it. this
+			// also keeps right-drag in production from moving the research
+			// (atom editing) camera.
+			pan.scrollLeft = container.scrollLeft;
+			pan.scrollTop = container.scrollTop;
+		}
+		else {
+			pan.camX = gCameraX;
+			pan.camY = gCameraY;
+		}
 	});
 	window.addEventListener("mousemove", function(e) {
 		if(!pan.active) {
 			return;
 		}
 		e.preventDefault();
-		gCameraX = pan.camX + (e.clientX - pan.startX);
-		gCameraY = pan.camY + (e.clientY - pan.startY);
-		applyCamera();
+		if(gEditMode.production) {
+			container.scrollLeft = pan.scrollLeft - (e.clientX - pan.startX);
+			container.scrollTop = pan.scrollTop - (e.clientY - pan.startY);
+		}
+		else {
+			gCameraX = pan.camX + (e.clientX - pan.startX);
+			gCameraY = pan.camY + (e.clientY - pan.startY);
+			applyCamera();
+		}
 	});
 	window.addEventListener("mouseup", function(e) {
 		if(pan.active) {
@@ -635,10 +671,37 @@ function initTransmutationPan() {
 		e.preventDefault();
 	});
 	container.addEventListener("wheel", function(e) {
+		var dx = e.deltaX;
+		var dy = e.deltaY;
+		if(e.shiftKey) {
+			// shift + wheel scrolls horizontally; browsers report the vertical
+			// delta even when shift is held, so route it to the x axis.
+			dx = dy;
+			dy = 0;
+		}
 		e.preventDefault();
-		gCameraX -= e.deltaX;
-		gCameraY -= e.deltaY;
-		applyCamera();
+		if(gEditMode.production) {
+			container.scrollLeft += dx;
+			container.scrollTop += dy;
+		}
+		else {
+			gCameraX -= dx;
+			gCameraY -= dy;
+			applyCamera();
+		}
+	});
+
+	// F10: return to the hex origin (center of the viewport)
+	window.addEventListener("keydown", function(e) {
+		if(e.key == "F10") {
+			e.preventDefault();
+			if(gEditMode.production) {
+				centerProduction();
+			}
+			else {
+				centerCamera();
+			}
+		}
 	});
 }
 

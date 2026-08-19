@@ -98,10 +98,20 @@ function showResearchTab() {
     d3.selectAll("#tab-research").classed("tab-selected", true);
 }
 
+// center the production board on the origin hex. the production svg is
+// svgWidthProd x svgHeightProd pixels and the (0,0) hex sits at its middle,
+// so put the middle of the svg at the middle of the scroll viewport.
+function centerProduction() {
+    var viewport = $I("transmutation");
+    viewport.scrollLeft = Math.max(0, (svgWidthProd - viewport.clientWidth) / 2);
+    viewport.scrollTop = Math.max(0, (svgHeightProd - viewport.clientHeight) / 2);
+}
+
 function showProductionTab() {
     d3.selectAll("#research-area-left,#transmutation-svg").style("display","none");
     d3.selectAll("#production-area,#production-svg").style("display","block");
     d3.select("#transmutation").style("overflow", "scroll");
+    centerProduction();
     gEditMode = {
         "research" : false,
         "production" : true,
