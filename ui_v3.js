@@ -156,8 +156,10 @@ function generateMetaCallbacks() {
 	d3.select("#puzzle-name").on("keyup", function(d) {
 		gPuzzleObj.name = d3.select("#puzzle-name").property("value");
 	});
-	d3.select("#steam-id").on("keyup", function(d) {
-		gPuzzleObj.steamID = d3.select("#steam-id").property("value");
+	d3.select("#steam-id").on("input", function(d) {
+		var v = d3.select("#steam-id").property("value").replace(/[^0-9]/g, "");
+		d3.select("#steam-id").property("value", v);
+		gPuzzleObj.steamID = v;
 	});
 	d3.select("#reagent-add").on("click", function(d) {
 		addReagent();

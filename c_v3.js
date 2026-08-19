@@ -121,9 +121,10 @@ function bondTypeBinary(bt) {
 	return 1 * bt.n + 2 * bt.r + 4 * bt.k + 8 * bt.y;
 }
 
-// convert BondType objects to binary data. returns array
+// convert Inst objects to binary data. returns array of 8 bytes (UInt64 tools bitfield)
 function instBinary(inst) {
-	return [0x01 * inst.arm
+	var d = [
+		0x01 * inst.arm
 	      + 0x02 * inst.multiarm
 	      + 0x04 * inst.piston
 	      + 0x08 * inst.track,
@@ -147,7 +148,11 @@ function instBinary(inst) {
 	      + 0x02 * inst.repeat
 	      + 0x04 * inst.pivot
 	      + 0x10 * inst.berlo
-	      + 0x20 * inst.ravari];
+	      + 0x20 * inst.ravari
+	];
+	var high = inst.toolsHighBytes || [0, 0, 0, 0];
+	d.push(high[0], high[1], high[2], high[3]);
+	return d;
 }
 
 // convert Molecule objects to binary data. returns array
@@ -191,11 +196,8 @@ function constructFile(obj) {
 	// steam ID little endian
 	d = d.concat(new BigInteger(obj.steamID, 10).toByteArray().map(function(_) { return _ < 0 ? 256 + _ : _}).reverse().concat([0, 0, 0, 0, 0, 0, 0, 0]).slice(0, 8));
 
-	// instructions/glyphs
+	// tools bitfield (UInt64)
 	d = d.concat(instBinary(obj.inst));
-
-	// padding
-	d.push(0, 0, 0, 0);
 
 	// reagents
 	d.push(obj.reagents.length, 0, 0, 0);
@@ -347,7 +349,7 @@ function generateGraphene() {
 	return new Molecule(primes, bonds);
 }
 
-// parse binary insts from 3 input array
+// parse tools bitfield (low 4 bytes of the UInt64, high bytes are preserved separately)
 function instParse(ia) {
 	return {
 		"arm"            : !!(0x01 & ia[0]),
@@ -472,8 +474,10 @@ function loadPuzzle(arr) {
 	// steamID
 	puz.steamID = new BigInteger(arr.splice(0, 8).reverse()).toRadix(10);
 
-	// inst bits
-	puz.inst = instParse(arr.splice(0, 8));
+	// tools bitfield (UInt64)
+	var toolsBytes = arr.splice(0, 8);
+	puz.inst = instParse(toolsBytes);
+	puz.inst.toolsHighBytes = toolsBytes.slice(4);
 
 	// reagents
 	var reagentCount = arr.shift();

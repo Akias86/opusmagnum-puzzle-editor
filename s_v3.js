@@ -19,7 +19,7 @@ function init() {
 	// a complete sample puzzle object in json format.
 	gPuzzleObj = {
 		"name" : "SAMPLE",
-		"steamID" : "76561198375746173",
+		"steamID" : "",
 		"inst" : {
 			"arm" : true,
 			"multiarm" : true,
