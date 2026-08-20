@@ -615,7 +615,8 @@ function loadFile(fp) {
 	fr.readAsArrayBuffer(fp);
 }
 
-// right-button drag (or mouse wheel) to pan the infinite transmutation field
+// right-button drag (or mouse wheel) to pan the infinite boards.
+// research moves the molecule camera; production moves its own camera.
 function initTransmutationPan() {
 	var pan = {
 		"active" : false,
@@ -623,8 +624,8 @@ function initTransmutationPan() {
 		"startY" : 0,
 		"camX" : 0,
 		"camY" : 0,
-		"scrollLeft" : 0,
-		"scrollTop" : 0
+		"prodCamX" : 0,
+		"prodCamY" : 0
 	};
 	var container = $I("transmutation");
 	container.addEventListener("mousedown", function(e) {
@@ -636,11 +637,8 @@ function initTransmutationPan() {
 		pan.startX = e.clientX;
 		pan.startY = e.clientY;
 		if(gEditMode.production) {
-			// production board is a scrollable svg: right-drag scrolls it. this
-			// also keeps right-drag in production from moving the research
-			// (atom editing) camera.
-			pan.scrollLeft = container.scrollLeft;
-			pan.scrollTop = container.scrollTop;
+			pan.prodCamX = gProdCameraX;
+			pan.prodCamY = gProdCameraY;
 		}
 		else {
 			pan.camX = gCameraX;
@@ -653,8 +651,9 @@ function initTransmutationPan() {
 		}
 		e.preventDefault();
 		if(gEditMode.production) {
-			container.scrollLeft = pan.scrollLeft - (e.clientX - pan.startX);
-			container.scrollTop = pan.scrollTop - (e.clientY - pan.startY);
+			gProdCameraX = pan.prodCamX + (e.clientX - pan.startX);
+			gProdCameraY = pan.prodCamY + (e.clientY - pan.startY);
+			applyProductionCamera();
 		}
 		else {
 			gCameraX = pan.camX + (e.clientX - pan.startX);
@@ -681,8 +680,9 @@ function initTransmutationPan() {
 		}
 		e.preventDefault();
 		if(gEditMode.production) {
-			container.scrollLeft += dx;
-			container.scrollTop += dy;
+			gProdCameraX -= dx;
+			gProdCameraY -= dy;
+			applyProductionCamera();
 		}
 		else {
 			gCameraX -= dx;

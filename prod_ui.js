@@ -7,16 +7,16 @@ var svgContentSizeProd = 3600;
 var scaleProd = d3.scaleLinear().domain([0,svgContentSizeProd]).range([0, Math.min(svgHeightProd * 4/3, svgWidthProd)]);
 
 var primeXProd = function(d) {
-    return scaleProd(60 * d.x + 30 * d.y + svgContentSizeProd/2 - 20);
+    return scaleProd(60 * d.x + 30 * d.y) - scaleProd(20);
 };
 var primeYProd = function(d) {
-    return scaleProd(0.9 * 60 * -d.y + svgContentSizeProd/2 - 20);
+    return scaleProd(0.9 * 60 * -d.y) - scaleProd(20);
 };
 var bondXProd = function(d) {
-    return scaleProd(60 * (d.x1 + d.x2) / 2 + 30 * (d.y1 + d.y2) / 2 + svgContentSizeProd/2 - bondWidth/2);
+    return scaleProd(60 * (d.x1 + d.x2) / 2 + 30 * (d.y1 + d.y2) / 2) - scaleProd(bondWidth/2);
 };
 var bondYProd = function(d) {
-    return scaleProd(0.9 * 60 * -(d.y1 + d.y2) / 2 + svgContentSizeProd/2 - bondHeight/2 - 1);
+    return scaleProd(0.9 * 60 * -(d.y1 + d.y2) / 2) - scaleProd(bondHeight/2) - scaleProd(1);
 };
 var bondTransformProd = function(d) {
     if(d.y2 == d.y1) {
@@ -63,10 +63,10 @@ function regionX(d) {
     else {
         var offset = regionWidth(d)/2;
     }
-    return scaleProd(60 * d.x + 30 * d.y + svgContentSizeProd/2) - offset;
+    return scaleProd(60 * d.x + 30 * d.y) - offset;
 }
 function regionY(d) {
-    return scaleProd(0.9 * 60 * -d.y + svgContentSizeProd/2) - regionHeight(d)/2;
+    return scaleProd(0.9 * 60 * -d.y) - regionHeight(d)/2;
 }
 
 // vial calculators
@@ -77,10 +77,79 @@ function vialHeight(d) {
     return scaleProd(216);
 }
 function vialX(d) {
-    return scaleProd(60 * d.x + 30 * d.y + svgContentSizeProd/2 - 75);
+    return scaleProd(60 * d.x + 30 * d.y) - scaleProd(75);
 }
 function vialY(d) {
-    return scaleProd(0.9 * 60 * -d.y + svgContentSizeProd/2 - (d.isTop ? 54 : 162));
+    return scaleProd(0.9 * 60 * -d.y) - scaleProd(d.isTop ? 54 : 162);
+}
+
+// production camera: pixel position of the hex origin (0,0) inside the
+// production viewport, mirroring the research board's navigation.
+var gProdCameraX = 0;
+var gProdCameraY = 0;
+
+// render only the production background hexes visible under the current
+// camera, clamped to the file format's coordinate range (same as research).
+function renderProductionBackgroundWindow() {
+    var size = transmutationViewSize();
+    var margin = 120;
+    var left = -gProdCameraX - margin;
+    var right = (size.w - gProdCameraX) + margin;
+    var top = -gProdCameraY - margin;
+    var bottom = (size.h - gProdCameraY) + margin;
+
+    // production pixel mapping: px' = (2/3)(60x + 30y) = 40x + 20y,
+    // py' = (2/3)(0.9*60*-y) = -36y
+    // inverse: y = -py'/36, x = px'/40 - y/2
+    var y0 = Math.max(gGridMinCoord, Math.ceil(-bottom / 36));
+    var y1 = Math.min(gGridMaxCoord, Math.floor(-top / 36));
+
+    var primes = [];
+    for(var y = y0; y <= y1; y++) {
+        var x0 = Math.max(gGridMinCoord, Math.ceil(left / 40 - 0.5 * y));
+        var x1 = Math.min(gGridMaxCoord, Math.floor(right / 40 - 0.5 * y));
+        for(var x = x0; x <= x1; x++) {
+            primes.push(new Prime("salt", x, y));
+        }
+    }
+
+    var hexagonLineColor = "rgb(128, 128, 128)";
+    var hexagonBgColor = "rgba(0, 0, 0, 0)";
+    var hexagonBgMidColor = "rgba(128, 0, 0, 0.5)";
+
+    var drawHexagon = function(x, y, w) { var h = w * 1.15; return d3.line()
+    .x(function(d) { return d.x; })
+    .y(function(d) { return d.y; })
+    .curve(d3.curveLinear)([
+        {"x" : x + w/2, "y" : y - h/4},
+        {"x" : x + w/2, "y" : y + h/4},
+        {"x" : x, "y" : y + h/2},
+        {"x" : x - w/2, "y" : y + h/4},
+        {"x" : x - w/2, "y" : y - h/4},
+        {"x" : x, "y" : y - h/2},
+        {"x" : x + w/2, "y" : y - h/4}
+    ])};
+
+    var layer = d3.select("#production-bg");
+    var pbh = layer.selectAll(".pbh").data(primes, function(d) { return d.x + "," + d.y; });
+    pbh.attr("d", function(d) {
+        return drawHexagon(primeXProd(d) + scaleProd(20), primeYProd(d) + scaleProd(20), scaleProd(50));
+    });
+    pbh.exit().remove();
+    pbh.enter().append("path")
+    .attr("class", "pbh")
+    .attr("d", function(d) {
+        return drawHexagon(primeXProd(d) + scaleProd(20), primeYProd(d) + scaleProd(20), scaleProd(50));
+    })
+    .attr("stroke", hexagonLineColor)
+    .attr("fill", function(d) { return d.x == 0 && d.y == 0 ? hexagonBgMidColor : hexagonBgColor; })
+    .on("click", productionBgHexClick);
+}
+
+// move the production camera and redraw the visible background window
+function applyProductionCamera() {
+    d3.select("#production-root").attr("transform", "translate(" + gProdCameraX + "," + gProdCameraY + ")");
+    renderProductionBackgroundWindow();
 }
 
 // functions
@@ -98,19 +167,18 @@ function showResearchTab() {
     d3.selectAll("#tab-research").classed("tab-selected", true);
 }
 
-// center the production board on the origin hex. the production svg is
-// svgWidthProd x svgHeightProd pixels and the (0,0) hex sits at its middle,
-// so put the middle of the svg at the middle of the scroll viewport.
+// center the production camera on the hex origin (0,0), i.e. the middle of the viewport
 function centerProduction() {
-    var viewport = $I("transmutation");
-    viewport.scrollLeft = Math.max(0, (svgWidthProd - viewport.clientWidth) / 2);
-    viewport.scrollTop = Math.max(0, (svgHeightProd - viewport.clientHeight) / 2);
+    var size = transmutationViewSize();
+    gProdCameraX = size.w / 2;
+    gProdCameraY = size.h / 2;
+    applyProductionCamera();
 }
 
 function showProductionTab() {
     d3.selectAll("#research-area-left,#transmutation-svg").style("display","none");
     d3.selectAll("#production-area,#production-svg").style("display","block");
-    d3.select("#transmutation").style("overflow", "scroll");
+    d3.select("#transmutation").style("overflow", "hidden");
     centerProduction();
     gEditMode = {
         "research" : false,
@@ -195,16 +263,11 @@ function updateProduction() {
 
 // background of production svg
 function updateProductionField(param) {
-    if(!gProductionBgMolecule) {
-        gProductionBgMolecule = generateBGMolecule(param || 15);
-    }
-    var backgroundObj = gProductionBgMolecule;
+    var size = transmutationViewSize();
+    gProdCameraX = size.w / 2;
+    gProdCameraY = size.h / 2;
 
-    var hexagonLineColor = "rgb(128, 128, 128)";
-    var hexagonBgColor = "rgba(0, 0, 0, 0)";
-    var hexagonBgMidColor = "rgba(128, 0, 0, 0.5)";
-
-    var svg = d3.select("#production-svg").attr("width",svgWidthProd).attr("height",svgHeightProd)
+    var svg = d3.select("#production-svg").attr("width", size.w).attr("height", size.h)
     .style("position", "absolute")
     .style("left", "0")
     .style("top", "0")
@@ -213,32 +276,21 @@ function updateProductionField(param) {
     .on("dragend", eventNothing)
     .on("dragout", eventNothing);
 
-    var drawHexagon = function(x, y, w) { var h = w * 1.15; return d3.line()
-    .x(function(d) { return d.x; })
-    .y(function(d) { return d.y; })
-    .curve(d3.curveLinear)([
-        {"x" : x + w/2, "y" : y - h/4},
-        {"x" : x + w/2, "y" : y + h/4},
-        {"x" : x, "y" : y + h/2},
-        {"x" : x - w/2, "y" : y + h/4},
-        {"x" : x - w/2, "y" : y - h/4},
-        {"x" : x, "y" : y - h/2},
-        {"x" : x + w/2, "y" : y - h/4}
-    ])};
+    // root group is translated by the camera; two layers keep the background
+    // (hexes) below the foreground (regions/vials/pipes) while panning.
+    var root = d3.select("#production-root");
+    if(root.empty()) {
+        root = svg.append("g").attr("id", "production-root");
+    }
+    root.attr("transform", "translate(" + gProdCameraX + "," + gProdCameraY + ")");
+    if(d3.select("#production-bg").empty()) {
+        root.append("g").attr("id", "production-bg");
+    }
+    if(d3.select("#production-fore").empty()) {
+        root.append("g").attr("id", "production-fore");
+    }
 
-    // background primes
-    var svgBackgroundPrimes = svg.selectAll(".pbh")
-    .data(backgroundObj.primes)
-    .enter()
-    .append("path")
-    .attr("class", "pbh")
-    .attr("d", function(d) {
-        return drawHexagon(primeXProd(d) + scaleProd(20), primeYProd(d) + scaleProd(20), scaleProd(50));
-    })
-    .attr("stroke", hexagonLineColor)
-    .attr("fill", function(d) { return d.x == 0 && d.y == 0 ? hexagonBgMidColor : hexagonBgColor; })
-    .on("click", productionBgHexClick);
-
+    renderProductionBackgroundWindow();
 }
 
 // show the tools in the production toolbox
@@ -259,7 +311,7 @@ function updateProductionToolbox() {
 // foreground of production svg
 function updateProductionBoard() {
     var prod = gPuzzleObj.productionInfo;
-    var svg = d3.select("#production-svg");
+    var svg = d3.select("#production-fore");
 
     // put regions on board
     var svgRegions = svg.selectAll(".reg").data(prod.regions);
@@ -316,7 +368,7 @@ function updateProductionBoard() {
 
 // update the pipe displayed in the grid
 function updateProductionPipe() {
-    var svg = d3.select("#production-svg");
+    var svg = d3.select("#production-fore");
     if(!gSelectedPipe) {
         svg.selectAll(".pipe").remove();
         return;
@@ -353,7 +405,7 @@ function updateProductionPipe() {
 
 // render the molecule with many parameters
 function renderPipeMolecule(molecule, classNamePrime, classNameBond, img, imgBond, callback) {
-    var svg = d3.select("#production-svg");
+    var svg = d3.select("#production-fore");
     var pipePrimes = svg.selectAll("." + classNamePrime).data(molecule.primes);
 
     // pipe molecule update/exit/enter
@@ -410,16 +462,16 @@ function productionToolboxClick(d, i) {
     gSelectedProductionTool = d;
 
     if(d.is == "pipe") {
-        var svg = d3.select("#production-svg");
+        var svg = d3.select("#production-fore");
         svg.selectAll(".reg,.vil").style("pointer-events", "none");
     }
     else if(d.is == "vial") {
-        var svg = d3.select("#production-svg");
+        var svg = d3.select("#production-fore");
         svg.selectAll(".reg").style("pointer-events", "none");
         svg.selectAll(".vil").style("pointer-events", "auto");
     }
     else {
-        var svg = d3.select("#production-svg");
+        var svg = d3.select("#production-fore");
         svg.selectAll(".reg").style("pointer-events", "auto");
         svg.selectAll(".vil").style("pointer-events", "none");
     }
