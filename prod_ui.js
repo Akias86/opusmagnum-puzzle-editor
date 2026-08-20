@@ -154,6 +154,7 @@ function applyProductionCamera() {
 
 // functions
 function showResearchTab() {
+    hideHoverPreview();
     d3.selectAll("#research-area-left,#transmutation-svg").style("display","block");
     d3.selectAll("#production-area,#production-svg").style("display","none");
     d3.select("#transmutation").style("overflow", "hidden");
@@ -176,6 +177,7 @@ function centerProduction() {
 }
 
 function showProductionTab() {
+    hideHoverPreview();
     d3.selectAll("#research-area-left,#transmutation-svg").style("display","none");
     d3.selectAll("#production-area,#production-svg").style("display","block");
     d3.select("#transmutation").style("overflow", "hidden");
@@ -288,6 +290,9 @@ function updateProductionField(param) {
     }
     if(d3.select("#production-fore").empty()) {
         root.append("g").attr("id", "production-fore");
+    }
+    if(d3.select("#production-preview").empty()) {
+        root.append("g").attr("id", "production-preview");
     }
 
     renderProductionBackgroundWindow();
@@ -486,6 +491,11 @@ function productionToolboxClick(d, i) {
         gEditMode.pipeIO = true;
     }
     updateProductionPipe();
+
+    // refresh the ghost preview in case the mouse is already over the board
+    if(gEditMode.production && gHoverLocalX != null) {
+        updateHoverPreview(gHoverLocalX, gHoverLocalY);
+    }
 }
 
 function productionBgHexClick(d, i) {
@@ -600,4 +610,90 @@ function updatePipeList() {
 function addPipe() {
     gPuzzleObj.productionInfo.pipes.push(new Pipe());
     updatePipeList();
+}
+// convert a point local to the production viewport into the hex cell underneath
+// it. production mapping: px' = 40x + 20y, py' = -36y; inverse: y = -py'/36,
+// x = px'/40 - y/2 (see renderProductionBackgroundWindow)
+function productionHexAtPoint(localX, localY) {
+    var px = localX - gProdCameraX;
+    var py = localY - gProdCameraY;
+    var y = Math.round(-py / 36);
+    var x = Math.round(px / 40 - 0.5 * y);
+    if(x < gGridMinCoord || x > gGridMaxCoord || y < gGridMinCoord || y > gGridMaxCoord) {
+        return null;
+    }
+    return {"x" : x, "y" : y};
+}
+
+// draw the ghost preview of the selected production tool in the production layer
+function renderProductionHoverPreview(hex) {
+    var layer = d3.select("#production-preview");
+    if(layer.empty()) {
+        return;
+    }
+    layer.selectAll(".hover-preview").remove();
+    if(!hex || !gSelectedProductionTool) {
+        return;
+    }
+    var tool = gSelectedProductionTool;
+    var img = layer.append("image")
+    .attr("class", "hover-preview")
+    .style("opacity", 0.45)
+    .style("pointer-events", "none");
+    if(tool.is == "region") {
+        var d = {"x" : hex.x, "y" : hex.y, "type" : tool.type};
+        img.datum(d)
+        .attr("xlink:href", "img/regions/" + tool.type + ".png")
+        .attr("width", regionWidth)
+        .attr("height", regionHeight)
+        .attr("x", regionX)
+        .attr("y", regionY);
+    }
+    else if(tool.is == "vial") {
+        var d = {"x" : hex.x, "y" : hex.y, "isTop" : tool.isTop, "count" : tool.count};
+        img.datum(d)
+        .attr("xlink:href", "img/prod/v" + (tool.isTop ? "t" : "b") + tool.count + ".png")
+        .attr("width", vialWidth)
+        .attr("height", vialHeight)
+        .attr("x", vialX)
+        .attr("y", vialY);
+    }
+    else if(tool.is == "pipe") {
+        var d = {"x" : hex.x, "y" : hex.y};
+        var href = tool.type == "shape" ? "img/prod/pipe.png"
+                 : (tool.type == "input" ? "img/prod/pipe-red.png" : "img/prod/pipe-blue.png");
+        img.datum(d)
+        .attr("xlink:href", href)
+        .attr("width", scaleProd(80))
+        .attr("height", scaleProd(80))
+        .attr("x", function(d0) { return primeXProd(d0) - scaleProd(20); })
+        .attr("y", function(d0) { return primeYProd(d0) - scaleProd(20); });
+    }
+}
+
+// update the semi-transparent ghost preview over the production editing area,
+// mirroring the research preview: it shows the selected region/vial/pipe tool.
+function updateProductionHoverPreview(localX, localY) {
+    if(typeof hideResearchHoverPreview == 'function') {
+        hideResearchHoverPreview();
+    }
+    var layer = d3.select("#production-preview");
+    if(!layer.empty()) {
+        layer.selectAll(".hover-preview").remove();
+    }
+    if(!gEditMode.production) {
+        gHoverState = null;
+        return;
+    }
+    var hex = productionHexAtPoint(localX, localY);
+    gHoverState = {"type" : "tool", "hex" : hex};
+    renderProductionHoverPreview(hex);
+}
+
+// hide the production ghost preview (keeps gHoverState untouched)
+function hideProductionHoverPreview() {
+    var layer = d3.select("#production-preview");
+    if(!layer.empty()) {
+        layer.selectAll(".hover-preview").remove();
+    }
 }

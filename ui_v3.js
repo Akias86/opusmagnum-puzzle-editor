@@ -205,16 +205,163 @@ function generateField(bg) {
 	}
 	root.attr("transform", "translate(" + gCameraX + "," + gCameraY + ")");
 
-	// two layers keep z-order stable while panning: background always behind
-	// molecules, even though the background window is rebuilt on every pan.
+	// layers keep z-order stable while panning: background always behind
+	// molecules, and the hover preview on top so it stays visible everywhere.
 	if(d3.select("#transmutation-bg").empty()) {
 		root.append("g").attr("id", "transmutation-bg");
 	}
 	if(d3.select("#transmutation-molecules").empty()) {
 		root.append("g").attr("id", "transmutation-molecules");
 	}
+	if(d3.select("#transmutation-preview").empty()) {
+		root.append("g").attr("id", "transmutation-preview");
+	}
 
 	renderBackgroundWindow();
+}
+
+// convert a point local to the transmutation viewport into the hex cell
+// underneath it (research grid). pixel mapping used by renderBackgroundWindow:
+// px' = 60x + 30y, py' = -54y; inverse: y = -py'/54, x = (px' - 30y)/60
+function researchHexAtPoint(localX, localY) {
+	var px = localX - gCameraX;
+	var py = localY - gCameraY;
+	var y = Math.round(-py / 54);
+	var x = Math.round((px - 30 * y) / 60);
+	if(x < gGridMinCoord || x > gGridMaxCoord || y < gGridMinCoord || y > gGridMaxCoord) {
+		return null;
+	}
+	return {"x" : x, "y" : y};
+}
+
+// decide whether the cursor is over a hex cell (place a prime) or over a bond
+// (place a bond): pick whichever feature center is nearer to the cursor.
+function researchNearestFeature(localX, localY) {
+	var hex = researchHexAtPoint(localX, localY);
+	if(!hex) {
+		return null;
+	}
+	var px = localX - gCameraX;
+	var py = localY - gCameraY;
+	var x = hex.x;
+	var y = hex.y;
+	var pmx = 60 * x + 30 * y;
+	var pmy = -54 * y;
+	var primeDist2 = (px - pmx) * (px - pmx) + (py - pmy) * (py - pmy);
+	// the 6 bond centers around this cell (a bond sits at the midpoint between
+	// two adjacent hex cells, matching the background bond images)
+	var candidates = [
+		[x, y, x + 1, y],
+		[x, y, x + 1, y - 1],
+		[x, y, x, y - 1],
+		[x, y, x - 1, y],
+		[x, y, x - 1, y + 1],
+		[x, y, x, y + 1]
+	];
+	var best = null;
+	var bestDist2 = primeDist2;
+	candidates.forEach(function(c) {
+		var bx = 60 * (c[0] + c[2]) / 2 + 30 * (c[1] + c[3]) / 2;
+		var by = -54 * (c[1] + c[3]) / 2;
+		var dx = px - bx;
+		var dy = py - by;
+		var d2 = dx * dx + dy * dy;
+		if(d2 < bestDist2) {
+			bestDist2 = d2;
+			best = {"x1" : c[0], "y1" : c[1], "x2" : c[2], "y2" : c[3]};
+		}
+	});
+	if(best) {
+		return {"type" : "bond", "bond" : best};
+	}
+	return {"type" : "prime", "hex" : hex};
+}
+
+// draw the ghost preview for the current hover state in the research layer
+function renderResearchHoverPreview(state) {
+	var layer = d3.select("#transmutation-preview");
+	if(layer.empty()) {
+		return;
+	}
+	layer.selectAll(".hover-preview").remove();
+	if(!state) {
+		return;
+	}
+	if(state.type == "bond") {
+		var fakeBond = new Bond(gSelectedBondType, state.bond.x1, state.bond.y1, state.bond.x2, state.bond.y2);
+		layer.append("image")
+		.datum(fakeBond)
+		.attr("class", "hover-preview")
+		.attr("width", scale(bondWidth))
+		.attr("height", scale(bondHeight))
+		.attr("x", bondX)
+		.attr("y", bondY)
+		.attr("transform", bondTransform)
+		.attr("xlink:href", bondImg)
+		.style("opacity", 0.45)
+		.style("pointer-events", "none");
+	}
+	else {
+		var fakePrime = new Prime(gSelectedPrimeType, state.hex.x, state.hex.y);
+		layer.append("image")
+		.datum(fakePrime)
+		.attr("class", "hover-preview")
+		.attr("width", scale(40))
+		.attr("height", scale(40))
+		.attr("x", primeX)
+		.attr("y", primeY)
+		.attr("xlink:href", primeImg)
+		.style("opacity", 0.45)
+		.style("pointer-events", "none");
+	}
+}
+
+// update the semi-transparent ghost preview over the research editing area:
+// hovering a hex shows the selected atom, hovering a bond shows the selected bond.
+function updateResearchHoverPreview(localX, localY) {
+	if(typeof hideProductionHoverPreview == 'function') {
+		hideProductionHoverPreview();
+	}
+	var layer = d3.select("#transmutation-preview");
+	if(!layer.empty()) {
+		layer.selectAll(".hover-preview").remove();
+	}
+	if(!gEditMode.research) {
+		gHoverState = null;
+		return;
+	}
+	var state = researchNearestFeature(localX, localY);
+	gHoverState = state;
+	renderResearchHoverPreview(state);
+}
+
+// route the ghost preview to the active editing mode (research/production)
+function updateHoverPreview(localX, localY) {
+	gHoverLocalX = localX;
+	gHoverLocalY = localY;
+	if(gEditMode.production && typeof updateProductionHoverPreview == "function") {
+		updateProductionHoverPreview(localX, localY);
+	}
+	else {
+		updateResearchHoverPreview(localX, localY);
+	}
+}
+
+// hide the research ghost preview (keeps gHoverState untouched)
+function hideResearchHoverPreview() {
+	var layer = d3.select("#transmutation-preview");
+	if(!layer.empty()) {
+		layer.selectAll(".hover-preview").remove();
+	}
+}
+
+// hide the ghost preview in both layers and forget the hover position
+function hideHoverPreview() {
+	hideResearchHoverPreview();
+	if(typeof hideProductionHoverPreview == 'function') {
+		hideProductionHoverPreview();
+	}
+	gHoverState = null;
 }
 
 // toolbox event callbacks.
@@ -222,6 +369,10 @@ function toolboxPrimeClick(prime) {
 	d3.selectAll(".toolbox-prime").classed("toolbox-selected", false);
 	d3.select(".toolbox-" + prime).classed("toolbox-selected", true);
 	gSelectedPrimeType = prime;
+	// refresh the ghost preview in case the mouse is already over the field
+	if(gEditMode.research && gHoverLocalX != null) {
+		updateHoverPreview(gHoverLocalX, gHoverLocalY);
+	}
 }
 
 function toolboxBondClick(bond) {
@@ -232,6 +383,10 @@ function toolboxBondClick(bond) {
 	else {
 		gSelectedBondType[bond] = true;
 		d3.select(".toolbox-" + bond).classed("toolbox-bond-selected", true);
+	}
+	// refresh the ghost preview in case the mouse is already over a bond
+	if(gEditMode.research && gHoverLocalX != null) {
+		updateHoverPreview(gHoverLocalX, gHoverLocalY);
 	}
 }
 
@@ -645,6 +800,15 @@ function initTransmutationPan() {
 			pan.camX = gCameraX;
 			pan.camY = gCameraY;
 		}
+	});
+
+	// semi-transparent ghost preview follows the mouse over the editing area
+	container.addEventListener("mousemove", function(e) {
+		var rect = container.getBoundingClientRect();
+		updateHoverPreview(e.clientX - rect.left, e.clientY - rect.top);
+	});
+	container.addEventListener("mouseleave", function() {
+		hideHoverPreview();
 	});
 	window.addEventListener("mousemove", function(e) {
 		if(!pan.active) {
