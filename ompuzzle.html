@@ -393,6 +393,15 @@
 			#invisible-area {
 				display: none;
 			}
+			/* in-game cursor style, hotspot at image center (50,50), restricted to the transmutation field */
+			#transmutation,
+			#transmutation * {
+				cursor: url('img/cursor_normal.png') 50 50, auto !important;
+			}
+			#transmutation.panning,
+			#transmutation.panning * {
+				cursor: url('img/cursor_hand_closed.png') 50 50, pointer !important;
+			}
 		</style>
 		<link rel="prefetch" href="img/regions/Small.png" />
 		<link rel="prefetch" href="img/regions/SmallWide.png" />

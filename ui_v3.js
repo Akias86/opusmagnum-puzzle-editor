@@ -634,6 +634,7 @@ function initTransmutationPan() {
 		}
 		e.preventDefault();
 		pan.active = true;
+		container.classList.add("panning");
 		pan.startX = e.clientX;
 		pan.startY = e.clientY;
 		if(gEditMode.production) {
@@ -664,6 +665,7 @@ function initTransmutationPan() {
 	window.addEventListener("mouseup", function(e) {
 		if(pan.active) {
 			pan.active = false;
+			container.classList.remove("panning");
 		}
 	});
 	container.addEventListener("contextmenu", function(e) {
