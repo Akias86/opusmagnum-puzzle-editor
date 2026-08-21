@@ -333,14 +333,14 @@ function updateProductionBoard() {
 
     svgRegions.enter().append("image")
     .classed("reg", true)
+    .style("pointer-events", "none")
     .attr("xlink:href", function(d) {
         return "img/regions/" + d.type + ".png";
     })
     .attr("width", regionWidth)
     .attr("height", regionHeight)
     .attr("x", regionX)
-    .attr("y", regionY)
-    .on("click", regionClick);
+    .attr("y", regionY);
 
     // put vials on board
     var svgVials = svg.selectAll(".vil").data(prod.vials);
@@ -351,21 +351,20 @@ function updateProductionBoard() {
     .attr("width", vialWidth)
     .attr("height", vialHeight)
     .attr("x", vialX)
-    .attr("y", vialY)
-    .on("click", vialClick);
+    .attr("y", vialY);
 
     svgVials.exit().remove();
 
     svgVials.enter().append("image")
     .classed("vil", true)
+    .style("pointer-events", "none")
     .attr("xlink:href", function(d) {
         return "img/prod/v" + (d.isTop ? "t" : "b") + d.count + ".png";
     })
     .attr("width", vialWidth)
     .attr("height", vialHeight)
     .attr("x", vialX)
-    .attr("y", vialY)
-    .on("click", vialClick);
+    .attr("y", vialY);
 
     // put pipes on board
     updateProductionPipe();
@@ -473,11 +472,11 @@ function productionToolboxClick(d, i) {
     else if(d.is == "vial") {
         var svg = d3.select("#production-fore");
         svg.selectAll(".reg").style("pointer-events", "none");
-        svg.selectAll(".vil").style("pointer-events", "auto");
+        svg.selectAll(".vil").style("pointer-events", "none");
     }
     else {
         var svg = d3.select("#production-fore");
-        svg.selectAll(".reg").style("pointer-events", "auto");
+        svg.selectAll(".reg").style("pointer-events", "none");
         svg.selectAll(".vil").style("pointer-events", "none");
     }
 
@@ -508,11 +507,39 @@ function productionBgHexClick(d, i) {
         return;
     }
     if(tool.is == "region") {
-        prod.regions.push(new Region(d.x, d.y, tool.type));
+        // placing on an anchor already holding the same-size region cancels
+        // that region; different sizes coexist on the same anchor.
+        var idx = -1;
+        for(var i = 0; i < prod.regions.length; i++) {
+            if(prod.regions[i].x == d.x && prod.regions[i].y == d.y && prod.regions[i].type == tool.type) {
+                idx = i;
+                break;
+            }
+        }
+        if(idx >= 0) {
+            prod.regions.splice(idx, 1);
+        }
+        else {
+            prod.regions.push(new Region(d.x, d.y, tool.type));
+        }
         updateProductionBoard();
     }
     else if(tool.is == "vial") {
-        prod.vials.push(new Vial(d.x, d.y, tool.isTop, tool.count));
+        // placing on an anchor already holding the same vial type cancels that
+        // vial; different types (isTop/count) coexist on the same anchor.
+        var vidx = -1;
+        for(var j = 0; j < prod.vials.length; j++) {
+            if(prod.vials[j].x == d.x && prod.vials[j].y == d.y && prod.vials[j].isTop == tool.isTop && prod.vials[j].count == tool.count) {
+                vidx = j;
+                break;
+            }
+        }
+        if(vidx >= 0) {
+            prod.vials.splice(vidx, 1);
+        }
+        else {
+            prod.vials.push(new Vial(d.x, d.y, tool.isTop, tool.count));
+        }
         updateProductionBoard();
     }
     else if(tool.is == "pipe") {
@@ -539,22 +566,6 @@ function pipeClick(d, i) {
     }
     gSelectedPipe.offsets.splice(i, 1);
     updateProductionPipe();
-}
-
-function vialClick(d, i) {
-    if(!gEditMode.production) {
-        return;
-    }
-    gPuzzleObj.productionInfo.vials.splice(i, 1);
-    updateProductionBoard();
-}
-
-function regionClick(d, i) {
-    if(!gEditMode.production) {
-        return;
-    }
-    gPuzzleObj.productionInfo.regions.splice(i, 1);
-    updateProductionBoard();
 }
 
 // highlight the current pipe being edited
