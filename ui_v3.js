@@ -16,10 +16,11 @@ var gCameraY = 0;
 var gGridMinCoord = -128;
 var gGridMaxCoord = 127;
 
-// prime/bond image files
-function primeImg(d) {
-	return "img/" + d.type + ".png";
-}
+// sprite-sheet (img/atoms_atlas.png) layout: 4x4 grid of 120px cells
+var gAtlasOrder = ["salt","air","earth","fire","water","quicksilver","gold","silver","copper","iron","tin","lead","vitae","mors","repeat","quintessence"];
+var gAtlasCell = {};
+gAtlasOrder.forEach(function(p, i) { gAtlasCell[p] = { col: i % 4, row: Math.floor(i / 4) }; });
+function primeHref(d) { return "#spr-" + d.type; }
 function bondImg(d) {
 	if(d.type.n) {
 		return "img/normal.png";
@@ -303,14 +304,14 @@ function renderResearchHoverPreview(state) {
 	}
 	else {
 		var fakePrime = new Prime(gSelectedPrimeType, state.hex.x, state.hex.y);
-		layer.append("image")
+		layer.append("use")
 		.datum(fakePrime)
 		.attr("class", "hover-preview")
 		.attr("width", scale(40))
 		.attr("height", scale(40))
 		.attr("x", primeX)
 		.attr("y", primeY)
-		.attr("xlink:href", primeImg)
+		.attr("xlink:href", primeHref)
 		.style("opacity", 0.45)
 		.style("pointer-events", "none");
 	}
@@ -431,7 +432,10 @@ function generateToolbox() {
 		d3.select("#toolbox-primes").append("div")
 		.classed("toolbox-prime", true)
 		.classed("toolbox-" + prime, true)
-		.style("background", "url('img/" + prime + ".png') 0 0 / 100% 100%")
+		.style("background-image", "url('img/atoms_atlas.png')")
+		.style("background-size", "160px 160px")
+		.style("background-position", function() { var c = gAtlasCell[prime]; return (-40 * c.col) + "px " + (-40 * c.row) + "px"; })
+		.style("background-repeat", "no-repeat")
 		.on("click", toolboxPrimeClick.bind(this, prime));
 	});
 	var bondTypes = ["n", "r", "k", "y"];
@@ -550,18 +554,18 @@ function updateMolecule(molecule) {
   var svgPrimes = svg.selectAll(".pr").data(gMoleculeObj.primes);
 
   // --update
-  svgPrimes.attr("x", primeX).attr("y", primeY).attr("xlink:href", primeImg);
+  svgPrimes.attr("x", primeX).attr("y", primeY).attr("xlink:href", primeHref);
   // --exit
   svgPrimes.exit().remove();
   // --enter
   svgPrimes.enter()
-  .append("image")
+  .append("use")
   .attr("class", "pr")
   .attr("width", scale(40))
   .attr("height", scale(40))
   .attr("x", primeX)
   .attr("y", primeY)
-  .attr("xlink:href", primeImg)
+  .attr("xlink:href", primeHref)
   .on("click", primeClick);
 
   // update bonds
