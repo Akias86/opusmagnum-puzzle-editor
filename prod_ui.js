@@ -6,81 +6,132 @@ var svgHeightProd = 2400;
 var svgContentSizeProd = 3600;
 var scaleProd = d3.scaleLinear().domain([0,svgContentSizeProd]).range([0, Math.min(svgHeightProd * 4/3, svgWidthProd)]);
 
-var primeXProd = function(d) {
-    return scaleProd(60 * d.x + 30 * d.y) - scaleProd(20);
+// production grid geometry, design units (scaleProd turns them into pixels:
+// ×2/3): horizontal cell spacing 61.5 (=41px), vertical row spacing 53.25
+// (=35.5px), horizontal row offset 30.75 (=20.5px), hexagon height 71 (=47.33px).
+var prodCellW = 61.5;
+var prodRowOff = 30.75;
+var prodRowSpace = 53.25;
+var prodHexH = 71;
+
+// hex center (pixels) of a cell (x, y)
+var prodCenterX = function(d) {
+    return scaleProd(prodCellW * d.x + prodRowOff * d.y);
 };
-var primeYProd = function(d) {
-    return scaleProd(0.9 * 60 * -d.y) - scaleProd(20);
+var prodCenterY = function(d) {
+    return scaleProd(prodRowSpace * -d.y);
 };
+
+// pipe atom sprite (84x95) and bond sprite (30x20), rendered at 50%
+var pipeSpriteW = 84 / 2;
+var pipeSpriteH = 95 / 2;
+var pipeBondW = 30 / 2;
+var pipeBondH = 20 / 2;
+
+// =====================================================================
+// SPRITE ANCHOR OFFSETS (pixels) — the single place to fine-tune how
+// each sprite sits on its hex. Positive dx moves the sprite right,
+// positive dy moves it down. Edit these values and refresh the page.
+//
+//   region[*]: the sprite is centered on the hex, then shifted by {dx,dy}.
+//              (wide regions are pre-shifted +20/+40 because their socket
+//              sits left of center in the art.)
+//   vial[*]:   extra shift on top of VIAL_SOCKET (the socket position
+//              measured from the sprite's top-left corner).
+//   pipe:      pipe atom sprite, centered on the hex.
+//   pbond:     pipe bond sprite, centered on the bond midpoint.
+// =====================================================================
+var VIAL_SOCKET = {"x" : 55, "topY" : 32, "bottomY" : 102};
+
+var SPRITE_OFFSET = {
+    region: {
+        "Small"      : {"dx" : 1,  "dy" : -.5},
+        "SmallWide"  : {"dx" : 21.25, "dy" : -1},
+        "SmallWider" : {"dx" : 41.85, "dy" : -1},
+        "Medium"     : {"dx" : .2,  "dy" : -1},
+        "MediumWide" : {"dx" : 21, "dy" : -1.5},
+        "Large"      : {"dx" : -.5  ,  "dy" : -2}
+    },
+    vial: {
+        "b0" : {"dx" : 0, "dy" : 0},
+        "b1" : {"dx" : 0, "dy" : 0},
+        "b2" : {"dx" : 0, "dy" : 0},
+        "b3" : {"dx" : 3, "dy" : 0},
+        "t0" : {"dx" : 0, "dy" : 0},
+        "t1" : {"dx" : 0, "dy" : 0},
+        "t2" : {"dx" : 0, "dy" : 0},
+        "t3" : {"dx" : 3, "dy" : 0}
+    },
+    pipe:  {"dx" : 0, "dy" : .5},
+    pbond: {"dx" : 0, "dy" : 0}
+};
+
+// pipe bond: centered on the bond midpoint, rotated to the bond direction
 var bondXProd = function(d) {
-    return scaleProd(60 * (d.x1 + d.x2) / 2 + 30 * (d.y1 + d.y2) / 2) - scaleProd(bondWidth/2);
+    return scaleProd(prodCellW * (d.x1 + d.x2) / 2 + prodRowOff * (d.y1 + d.y2) / 2) - pipeBondW/2 + SPRITE_OFFSET.pbond.dx;
 };
 var bondYProd = function(d) {
-    return scaleProd(0.9 * 60 * -(d.y1 + d.y2) / 2) - scaleProd(bondHeight/2) - scaleProd(1);
+    return scaleProd(prodRowSpace * -(d.y1 + d.y2) / 2) - pipeBondH/2 - scaleProd(1) + SPRITE_OFFSET.pbond.dy;
 };
 var bondTransformProd = function(d) {
     if(d.y2 == d.y1) {
         return "";
     }
     else if(d.y2 != d.y1 && d.x2 != d.x1) {
-        return "rotate(60 " + (bondXProd(d) + scaleProd(bondWidth/2)) + " " + (bondYProd(d) + scaleProd(bondHeight/2)) + ")";
+        return "rotate(60 " + (bondXProd(d) + pipeBondW/2) + " " + (bondYProd(d) + pipeBondH/2) + ")";
     }
     else {
-        return "rotate(120 " + (bondXProd(d) + scaleProd(bondWidth/2)) + " " + (bondYProd(d) + scaleProd(bondHeight/2)) + ")";
+        return "rotate(120 " + (bondXProd(d) + pipeBondW/2) + " " + (bondYProd(d) + pipeBondH/2) + ")";
     }
 };
 
 // region calculators
+// all production sprites are rendered at 50% of their original image size,
+// positioned so their anchor (socket) point stays on the target hex.
+var regionSizes = {
+    "Small" : [309, 282],
+    "SmallWide" : [391, 284],
+    "SmallWider" : [473, 284],
+    "Medium" : [472, 436],
+    "MediumWide" : [556, 438],
+    "Large" : [645, 581]
+};
 function regionWidth(d) {
-    var rws = {
-        "Small" : 240,
-        "SmallWide" : 360,
-        "SmallWider" : 480,
-        "Medium" : 360,
-        "MediumWide" : 480,
-        "Large" : 480
-    };
-    return scaleProd(rws[d.type] || 240);
+    return (regionSizes[d.type] ? regionSizes[d.type][0] : 309) / 2;
 }
 function regionHeight(d) {
-    var rhs = {
-        "Small" : 216,
-        "SmallWide" : 216,
-        "SmallWider" : 216,
-        "Medium" : 324,
-        "MediumWide" : 324,
-        "Large" : 432
-    };
-    return scaleProd(rhs[d.type] || 240);
+    return (regionSizes[d.type] ? regionSizes[d.type][1] : 282) / 2;
 }
 function regionX(d) {
-    if(d.type == "SmallWide" || d.type == "MediumWide") {
-        var offset = regionWidth(d)/2 - scaleProd(30);
-    }
-    else if(d.type == "SmallWider") {
-        var offset = regionWidth(d)/2 - scaleProd(60);
-    }
-    else {
-        var offset = regionWidth(d)/2;
-    }
-    return scaleProd(60 * d.x + 30 * d.y) - offset;
+    var o = SPRITE_OFFSET.region[d.type] || SPRITE_OFFSET.region.Small;
+    return prodCenterX(d) - regionWidth(d)/2 + o.dx;
 }
 function regionY(d) {
-    return scaleProd(0.9 * 60 * -d.y) - regionHeight(d)/2;
+    var o = SPRITE_OFFSET.region[d.type] || SPRITE_OFFSET.region.Small;
+    return prodCenterY(d) - regionHeight(d)/2 + o.dy;
 }
 
 // vial calculators
+var vialSizes = {
+    "b0" : [301, 268], "b1" : [463, 266], "b2" : [622, 266], "b3" : [785, 265],
+    "t0" : [296, 264], "t1" : [459, 260], "t2" : [621, 260], "t3" : [781, 262]
+};
+function vialSizeKey(d) {
+    return (d.isTop ? "t" : "b") + d.count;
+}
 function vialWidth(d) {
-    return scaleProd(210 + d.count * 120);
+    return (vialSizes[vialSizeKey(d)] ? vialSizes[vialSizeKey(d)][0] : 301) / 2;
 }
 function vialHeight(d) {
-    return scaleProd(216);
+    return (vialSizes[vialSizeKey(d)] ? vialSizes[vialSizeKey(d)][1] : 268) / 2;
 }
 function vialX(d) {
-    return scaleProd(60 * d.x + 30 * d.y) - scaleProd(75);
+    var o = SPRITE_OFFSET.vial[vialSizeKey(d)] || SPRITE_OFFSET.vial.b0;
+    return prodCenterX(d) - VIAL_SOCKET.x + o.dx;
 }
 function vialY(d) {
-    return scaleProd(0.9 * 60 * -d.y) - scaleProd(d.isTop ? 54 : 162);
+    var o = SPRITE_OFFSET.vial[vialSizeKey(d)] || SPRITE_OFFSET.vial.b0;
+    return prodCenterY(d) - (d.isTop ? VIAL_SOCKET.topY : VIAL_SOCKET.bottomY) + o.dy;
 }
 
 // production camera: pixel position of the hex origin (0,0) inside the
@@ -98,16 +149,17 @@ function renderProductionBackgroundWindow() {
     var top = -gProdCameraY - margin;
     var bottom = (size.h - gProdCameraY) + margin;
 
-    // production pixel mapping: px' = (2/3)(60x + 30y) = 40x + 20y,
-    // py' = (2/3)(0.9*60*-y) = -36y
-    // inverse: y = -py'/36, x = px'/40 - y/2
-    var y0 = Math.max(gGridMinCoord, Math.ceil(-bottom / 36));
-    var y1 = Math.min(gGridMaxCoord, Math.floor(-top / 36));
+    // production pixel mapping: px' = 41x + 20.5y, py' = -35.5y
+    // inverse: y = -py'/35.5, x = px'/41 - y/2
+    var prodRowPx = scaleProd(prodRowSpace);
+    var prodColPx = scaleProd(prodCellW);
+    var y0 = Math.max(gGridMinCoord, Math.ceil(-bottom / prodRowPx));
+    var y1 = Math.min(gGridMaxCoord, Math.floor(-top / prodRowPx));
 
     var primes = [];
     for(var y = y0; y <= y1; y++) {
-        var x0 = Math.max(gGridMinCoord, Math.ceil(left / 40 - 0.5 * y));
-        var x1 = Math.min(gGridMaxCoord, Math.floor(right / 40 - 0.5 * y));
+        var x0 = Math.max(gGridMinCoord, Math.ceil(left / prodColPx - 0.5 * y));
+        var x1 = Math.min(gGridMaxCoord, Math.floor(right / prodColPx - 0.5 * y));
         for(var x = x0; x <= x1; x++) {
             primes.push(new Prime("salt", x, y));
         }
@@ -117,7 +169,7 @@ function renderProductionBackgroundWindow() {
     var hexagonBgColor = "rgba(0, 0, 0, 0)";
     var hexagonBgMidColor = "rgba(128, 0, 0, 0.5)";
 
-    var drawHexagon = function(x, y, w) { var h = w * 1.15; return d3.line()
+    var drawHexagon = function(x, y, w, h) { return d3.line()
     .x(function(d) { return d.x; })
     .y(function(d) { return d.y; })
     .curve(d3.curveLinear)([
@@ -133,13 +185,13 @@ function renderProductionBackgroundWindow() {
     var layer = d3.select("#production-bg");
     var pbh = layer.selectAll(".pbh").data(primes, function(d) { return d.x + "," + d.y; });
     pbh.attr("d", function(d) {
-        return drawHexagon(primeXProd(d) + scaleProd(20), primeYProd(d) + scaleProd(20), scaleProd(50));
+        return drawHexagon(prodCenterX(d), prodCenterY(d), scaleProd(prodCellW), scaleProd(prodHexH));
     });
     pbh.exit().remove();
     pbh.enter().append("path")
     .attr("class", "pbh")
     .attr("d", function(d) {
-        return drawHexagon(primeXProd(d) + scaleProd(20), primeYProd(d) + scaleProd(20), scaleProd(50));
+        return drawHexagon(prodCenterX(d), prodCenterY(d), scaleProd(prodCellW), scaleProd(prodHexH));
     })
     .attr("stroke", hexagonLineColor)
     .attr("fill", function(d) { return d.x == 0 && d.y == 0 ? hexagonBgMidColor : hexagonBgColor; })
@@ -414,20 +466,20 @@ function renderPipeMolecule(molecule, classNamePrime, classNameBond, img, imgBon
 
     // pipe molecule update/exit/enter
     pipePrimes
-    .attr("x", function(d) { return primeXProd(d) - scaleProd(20); })
-    .attr("y", function(d) { return primeYProd(d) - scaleProd(20); });
+    .attr("x", function(d) { return prodCenterX(d) - pipeSpriteW/2 + SPRITE_OFFSET.pipe.dx; })
+    .attr("y", function(d) { return prodCenterY(d) - pipeSpriteH/2 + SPRITE_OFFSET.pipe.dy; });
 
     pipePrimes.exit().remove();
 
-    // since the pipe image is too small... we double its size from 40 to 80
+    // pipe atoms are centered on their hex and rendered at 50% of the original
     var enter = pipePrimes.enter().append("image")
     .classed("pipe", true)
     .classed(classNamePrime, true)
     .attr("xlink:href", img)
-    .attr("width", scaleProd(80))
-    .attr("height", scaleProd(80))
-    .attr("x", function(d) { return primeXProd(d) - scaleProd(20); })
-    .attr("y", function(d) { return primeYProd(d) - scaleProd(20); });
+    .attr("width", pipeSpriteW)
+    .attr("height", pipeSpriteH)
+    .attr("x", function(d) { return prodCenterX(d) - pipeSpriteW/2 + SPRITE_OFFSET.pipe.dx; })
+    .attr("y", function(d) { return prodCenterY(d) - pipeSpriteH/2 + SPRITE_OFFSET.pipe.dy; });
 
     // for red/blue pipes there is no callback
     if(callback) {
@@ -451,8 +503,8 @@ function renderPipeMolecule(molecule, classNamePrime, classNameBond, img, imgBon
     .attr("x", bondXProd)
     .attr("y", bondYProd)
     .attr("transform", bondTransformProd)
-    .attr("width", scaleProd(bondWidth))
-    .attr("height", scaleProd(bondHeight));
+    .attr("width", pipeBondW)
+    .attr("height", pipeBondH);
 
 }
 
@@ -623,13 +675,13 @@ function addPipe() {
     updatePipeList();
 }
 // convert a point local to the production viewport into the hex cell underneath
-// it. production mapping: px' = 40x + 20y, py' = -36y; inverse: y = -py'/36,
-// x = px'/40 - y/2 (see renderProductionBackgroundWindow)
+// it. production mapping: px' = 41x + 20.5y, py' = -35.5y; inverse:
+// y = -py'/35.5, x = px'/41 - y/2 (see renderProductionBackgroundWindow)
 function productionHexAtPoint(localX, localY) {
     var px = localX - gProdCameraX;
     var py = localY - gProdCameraY;
-    var y = Math.round(-py / 36);
-    var x = Math.round(px / 40 - 0.5 * y);
+    var y = Math.round(-py / scaleProd(prodRowSpace));
+    var x = Math.round(px / scaleProd(prodCellW) - 0.5 * y);
     if(x < gGridMinCoord || x > gGridMaxCoord || y < gGridMinCoord || y > gGridMaxCoord) {
         return null;
     }
@@ -675,10 +727,10 @@ function renderProductionHoverPreview(hex) {
                  : (tool.type == "input" ? "img/prod/pipe-red.png" : "img/prod/pipe-blue.png");
         img.datum(d)
         .attr("xlink:href", href)
-        .attr("width", scaleProd(80))
-        .attr("height", scaleProd(80))
-        .attr("x", function(d0) { return primeXProd(d0) - scaleProd(20); })
-        .attr("y", function(d0) { return primeYProd(d0) - scaleProd(20); });
+        .attr("width", pipeSpriteW)
+        .attr("height", pipeSpriteH)
+        .attr("x", function(d0) { return prodCenterX(d0) - pipeSpriteW/2 + SPRITE_OFFSET.pipe.dx; })
+        .attr("y", function(d0) { return prodCenterY(d0) - pipeSpriteH/2 + SPRITE_OFFSET.pipe.dy; });
     }
 }
 
