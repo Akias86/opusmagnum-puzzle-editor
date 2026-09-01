@@ -1,6 +1,5 @@
 var gPuzzleObj = {};
 var gMoleculeObj = {};
-var gBgMolecule = {};
 
 var gSelectedPrimeType = "salt";
 var gSelectedBondType = {"n" : false, "r": false, "k": false, "y": false};
@@ -13,7 +12,6 @@ var gEditMode = {
 };
 var gSelectedProductionTool = null;
 var gSelectedPipe = null;
-var gHoverHex = null; // (legacy) last hovered hex cell
 var gHoverLocalX = null; // last mouse position over the field (viewport-local)
 var gHoverLocalY = null;
 var gHoverState = null; // last hover feature: {type:prime,bond,tool, ...}
@@ -133,11 +131,9 @@ function init() {
 	}
 
 	// initialization
-	gBgMolecule = generateBGMolecule(15);
-
 	updateTextInputs();
 
-	generateField(gBgMolecule);
+	generateField();
 	initTransmutationPan();
 	generateMetaCallbacks();
 	generateToolbox();

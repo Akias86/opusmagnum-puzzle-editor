@@ -314,41 +314,6 @@ function fullBond(primes) {
 	return bonds;
 }
 
-// the background molecule
-function generateBGMolecule(range) {
-	var primes = [];
-	// from vertical line 1 - 10
-	for(var y = -range; y < range; y++) {
-		// horizontal
-		for(var x = -range - Math.ceil(y/2); x < range - Math.ceil(y/2); x++) {
-			primes.push(new Prime("salt", x, y));
-		}
-	}
-	// make bonds
-	var bonds = fullBond(primes);
-	return new Molecule(primes, bonds);
-}
-
-// generate a piece of graphene
-function generateGraphene() {
-	var primes = [];
-	var bonds = [];
-	// from vertical line 1 - 10
-	for(var y = 0; y < 9; y++) {
-		// horizontal
-		for(var x = 0 - Math.ceil(y/2); x < 15 - Math.ceil(y/2); x++) {
-			if((y % 2 == 0 && (x + Math.ceil(y/2)) % 3 != 2)
-			|| (y % 2 == 1 && (x + Math.ceil(y/2)) % 3 != 1)) {
-				primes.push(new Prime("fire", x, y));
-			}
-		}
-	}
-	// make bonds
-	bonds = fullBond(primes);
-
-	return new Molecule(primes, bonds);
-}
-
 // parse tools bitfield (low 4 bytes of the UInt64, high bytes are preserved separately)
 function instParse(ia) {
 	return {

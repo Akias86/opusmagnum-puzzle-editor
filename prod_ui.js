@@ -543,7 +543,7 @@ function productionToolboxClick(d, i) {
     }
     updateProductionPipe();
 
-    // refresh the ghost preview in case the mouse is already over the board
+    // refresh the hover preview in case the mouse is already over the board
     if(gEditMode.production && gHoverLocalX != null) {
         updateHoverPreview(gHoverLocalX, gHoverLocalY);
     }

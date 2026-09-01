@@ -10,11 +10,12 @@ var scale = d3.scaleLinear().domain([0,svgContentSize]).range([0, Math.min(svgHe
 var gCameraX = 0;
 var gCameraY = 0;
 
-// the puzzle file format stores each coordinate as a signed byte, so the board
-// can only represent coordinates in [-128, 127]; grid cells outside this range
-// are never rendered, which also keeps newly placed atoms in bounds.
-var gGridMinCoord = -128;
-var gGridMaxCoord = 127;
+// the complete board spans [-127, 128] on both axial coordinates, forming a
+// parallelogram with acute corners at the top-right and bottom-left; grid
+// cells outside this range are never rendered and no atoms can be placed
+// there.
+var gGridMinCoord = -127;
+var gGridMaxCoord = 128;
 
 // sprite-sheet (img/atoms_atlas.png) layout: 4x4 grid of 120px cells
 var gAtlasOrder = ["salt","air","earth","fire","water","quicksilver","gold","silver","copper","iron","tin","lead","vitae","mors","repeat","quintessence"];
@@ -37,19 +38,21 @@ function bondImg(d) {
 // prime/bond transformation functions. coordinates are relative to the hex
 // origin (0,0); the root group is translated by the camera, so panning never
 // repositions content and the board can extend infinitely.
+// the lattice matches the unscaled background tile: 82 px per column, 71 px
+// per row (true-hex geometry, so diagonal bonds land exactly on 60° lines)
 var primeX = function(d) {
-	return 60 * d.x + 30 * d.y - 20;
+	return 82 * d.x + 41 * d.y - 30;
 };
 var primeY = function(d) {
-	return 0.9 * 60 * -d.y - 20;
+	return -71 * d.y - 30;
 };
-var bondWidth = 27;
-var bondHeight = 18;
+var bondWidth = 33;
+var bondHeight = 22;
 var bondX = function(d) {
-	return 60 * (d.x1 + d.x2) / 2 + 30 * (d.y1 + d.y2) / 2 - bondWidth/2;
+	return 82 * (d.x1 + d.x2) / 2 + 41 * (d.y1 + d.y2) / 2 - bondWidth/2;
 };
 var bondY = function(d) {
-	return 0.9 * 60 * -(d.y1 + d.y2) / 2 - bondHeight/2 - 1;
+	return -71 * (d.y1 + d.y2) / 2 - bondHeight/2;
 };
 var bondTransform = function(d) {
 	if(d.y2 == d.y1) {
@@ -63,31 +66,36 @@ var bondTransform = function(d) {
 	}
 };
 
-// prime/bond event functions
+// re-run the hover highlight at the current mouse position, so placing or
+// cancelling an atom/bond immediately re-marks the feature under the cursor
+function refreshResearchHoverPreview() {
+	if(gEditMode.research && gHoverLocalX != null) {
+		updateHoverPreview(gHoverLocalX, gHoverLocalY);
+	}
+}
+
+// prime/bond event functions. left-click places atoms/bonds and repaints an
+// atom with the selected type; cancelling existing ones is done with a
+// right-click (researchRightClickRemove), so clicking an existing bond or a
+// same-type atom no longer removes anything.
 var primeClick = function(d) {
-	if(gSelectedPrimeType == d.type) {
-		var ind = gMoleculeObj.primes.indexOf(d);
-		gMoleculeObj.primes.splice(ind, 1);
-	}
-	else {
+	if(gSelectedPrimeType != d.type) {
 		d.type = gSelectedPrimeType;
+		updateMolecule(gMoleculeObj);
+		refreshResearchHoverPreview();
 	}
-	updateMolecule(gMoleculeObj);
 };
 var bprimeClick = function(d) {
 	var prime = new Prime(gSelectedPrimeType, d.x, d.y);
 	gMoleculeObj.primes.push(prime);
 	updateMolecule(gMoleculeObj);
-};
-var bondClick = function(d) {
-	var ind = gMoleculeObj.bonds.indexOf(d);
-	gMoleculeObj.bonds.splice(ind, 1);
-	updateMolecule(gMoleculeObj);
+	refreshResearchHoverPreview();
 };
 var bbondClick = function(d) {
 	var bond = new Bond(gSelectedBondType, d.x1, d.y1, d.x2, d.y2);
 	gMoleculeObj.bonds.push(bond);
 	updateMolecule(gMoleculeObj);
+	refreshResearchHoverPreview();
 };
 var eventNothing = function() {
 	d3.event.preventDefault();
@@ -99,75 +107,123 @@ function transmutationViewSize() {
 	return {"w" : c.clientWidth, "h" : c.clientHeight};
 }
 
-// render only the background hexes visible under the current camera, so the
-// board can extend infinitely without ever building a large DOM. the emitted
-// hexes are clamped to the file format's coordinate range (gGridMinCoord..
-// gGridMaxCoord), so beyond that range nothing is drawn and no atoms can be
-// placed there.
-function renderBackgroundWindow() {
-	var size = transmutationViewSize();
-	var margin = 120;
+// the board background is the seamless lattice pattern (img/grid_tile.png at
+// its native 82x142 px period, one column wide and two rows tall) clipped to
+// the full board parallelogram — the grid coordinate range [-127..128] on
+// both axial axes, edges half a cell outside the outermost cells (so the
+// outer link loops are cut at their midpoints, like in-game).
+//
+// implementation: the pattern and the clip path (both anchored to the root
+// coordinate system) are built once; on every camera move only a viewport-
+// sized rect is repositioned. a huge filled path is avoided because browser
+// rasterization limits would clip it.
 
-	// visible rectangle in camera space (hex origin at 0,0)
-	var left = -gCameraX - margin;
-	var right = (size.w - gCameraX) + margin;
-	var top = -gCameraY - margin;
-	var bottom = (size.h - gCameraY) + margin;
-
-	// pixel mapping: px' = 60x + 30y, py' = -54y
-	// inverse: y = -py'/54, x = (px' - 30y)/60
-	// clamp to the representable coordinate range so no grid cells show outside
-	// the file format's signed-byte limits ([-128, 127]).
-	var y0 = Math.max(gGridMinCoord, Math.ceil(-bottom / 54));
-	var y1 = Math.min(gGridMaxCoord, Math.floor(-top / 54));
-
-	var primes = [];
-	for(var y = y0; y <= y1; y++) {
-		var x0 = Math.max(gGridMinCoord, Math.ceil((left - 30 * y) / 60));
-		var x1 = Math.min(gGridMaxCoord, Math.floor((right - 30 * y) / 60));
-		for(var x = x0; x <= x1; x++) {
-			primes.push(new Prime("salt", x, y));
-		}
-	}
-	var bgMolecule = new Molecule(primes, fullBond(primes));
-
-	var layer = d3.select("#transmutation-bg");
-
-	// background primes
-	var bp = layer.selectAll(".bpr").data(bgMolecule.primes, function(d) { return d.x + "," + d.y; });
-	bp.attr("x", primeX).attr("y", primeY);
-	bp.exit().remove();
-	bp.enter().append("image")
-	.attr("class", "bpr")
-	.attr("width", 40)
-	.attr("height", 40)
-	.attr("x", primeX)
-	.attr("y", primeY)
-	.attr("xlink:href", function(d) {
-		if(d.x == 0 && d.y == 0) {
-			// use the red panel at (0,0)
-			return "img/bprime0.png";
-		}
-		return "img/bprime.png";
-	})
-	.on("click", bprimeClick);
-
-	// background bonds
-	var bb = layer.selectAll(".bbo").data(bgMolecule.bonds, function(d) { return d.x1 + "," + d.y1 + "-" + d.x2 + "," + d.y2; });
-	bb.attr("x", bondX).attr("y", bondY).attr("transform", bondTransform);
-	bb.exit().remove();
-	bb.enter().append("image")
-	.attr("class", "bbo")
-	.attr("xlink:href", "img/bbond.png")
-	.attr("x", bondX)
-	.attr("y", bondY)
-	.attr("transform", bondTransform)
-	.attr("width", bondWidth)
-	.attr("height", bondHeight)
-	.on("click", bbondClick);
+// cell-space -> root pixel space (same as primeX/primeY without the sprite
+// offset, i.e. cell centers)
+function boardCellToPixel(c) {
+	return [82 * c[0] + 41 * c[1], -71 * c[1]];
 }
 
-// move the camera and redraw the visible background window
+// parallelogram covering the full board range, edges half a cell out
+function boardBackgroundPath() {
+	var m = 0.5;
+	var lo = gGridMinCoord - m;
+	var hi = gGridMaxCoord + m;
+	var pts = [[lo, lo], [hi, lo], [hi, hi], [lo, hi]];
+	return "M " + pts.map(function(c) {
+		var p = boardCellToPixel(c);
+		return p[0] + " " + p[1];
+	}).join(" L ") + " Z";
+}
+
+// the tile contains a lattice node at source pixel (40.5, 70.5) — the phase
+// of cell (0,0) at the tile's native scale (82 px per column, 71 px per row)
+var BOARD_TILE_X = -40.5;
+var BOARD_TILE_Y = -70.5;
+
+function renderBackgroundWindow() {
+	var layer = d3.select("#transmutation-bg");
+	if(layer.empty()) {
+		return;
+	}
+	var defs = d3.select("#transmutation-svg").select("defs");
+	if(defs.select("pattern#board-bg-pattern").empty()) {
+		var bppat = defs.append("pattern")
+		.attr("id", "board-bg-pattern")
+		.attr("patternUnits", "userSpaceOnUse")
+		.attr("width", 82)
+		.attr("height", 142);
+		// the image is one full native period (82x142), but its phase is offset
+		// by the tile's (0,0)-node (BOARD_TILE_X/Y), so lay a 2x2 grid of copies
+		// to cover the whole pattern tile; adjacent copies meet exactly at the
+		// period, so the wrap is seamless.
+		for(var i = 0; i < 2; i++) {
+			for(var j = 0; j < 2; j++) {
+				bppat.append("image")
+				.attr("xlink:href", "img/grid_tile.png")
+				.attr("x", BOARD_TILE_X + i * 82)
+				.attr("y", BOARD_TILE_Y + j * 142)
+				.attr("width", 82)
+				.attr("height", 142);
+			}
+		}
+	}
+	if(defs.select("clipPath#board-bg-clip").empty()) {
+		defs.append("clipPath")
+		.attr("id", "board-bg-clip")
+		.append("path")
+		.attr("d", boardBackgroundPath());
+	}
+	var size = transmutationViewSize();
+	var margin = 120;
+	layer.selectAll(".board-bg-rect").data([null])
+	.enter().append("rect")
+	.attr("class", "board-bg-rect")
+	.attr("fill", "url(#board-bg-pattern)")
+	.attr("clip-path", "url(#board-bg-clip)")
+	.on("click", boardBackgroundClick);
+	// only the rect follows the camera; the pattern stays lattice-anchored
+	layer.select(".board-bg-rect")
+	.attr("x", -gCameraX - margin)
+	.attr("y", -gCameraY - margin)
+	.attr("width", size.w + 2 * margin)
+	.attr("height", size.h + 2 * margin);
+
+	if(layer.select(".origin-highlight").empty()) {
+		// the origin cell (0,0) carries a permanent cell highlight
+		layer.append("image")
+		.attr("class", "origin-highlight")
+		.datum({"x" : 0, "y" : 0})
+		.attr("width", scale(60))
+		.attr("height", scale(60))
+		.attr("x", primeX)
+		.attr("y", primeY)
+		.attr("xlink:href", "img/grid_circle_hover.png")
+		.style("pointer-events", "none");
+	}
+}
+
+// left-click on the board background places the selected atom/bond at the
+// feature under the cursor (the old per-cell images did this; the single
+// board path replaces them). existing atoms/bonds are left untouched.
+function boardBackgroundClick() {
+	var rect = $I("transmutation").getBoundingClientRect();
+	var state = researchNearestFeature(d3.event.clientX - rect.left, d3.event.clientY - rect.top);
+	if(!state) {
+		return;
+	}
+	if(state.type == "prime") {
+		if(!researchPrimeAt(state.hex.x, state.hex.y)) {
+			bprimeClick(state.hex);
+		}
+	}
+	else if(!researchBondAt(state.bond.x1, state.bond.y1, state.bond.x2, state.bond.y2)) {
+		bbondClick(state.bond);
+	}
+}
+
+// move the camera; the board background is static within the root group (the
+// pattern is anchored to the lattice, never re-rendered on pan)
 function applyCamera() {
 	d3.select("#transmutation-root").attr("transform", "translate(" + gCameraX + "," + gCameraY + ")");
 	renderBackgroundWindow();
@@ -182,7 +238,7 @@ function centerCamera() {
 }
 
 // init field
-function generateField(bg) {
+function generateField() {
 	var size = transmutationViewSize();
 
 	// start with the hex origin centered in the viewport
@@ -206,16 +262,17 @@ function generateField(bg) {
 	}
 	root.attr("transform", "translate(" + gCameraX + "," + gCameraY + ")");
 
-	// layers keep z-order stable while panning: background always behind
-	// molecules, and the hover preview on top so it stays visible everywhere.
+	// layers keep z-order stable while panning: background pattern, then the
+	// hover highlight (below atoms/bonds), then molecules. order is enforced
+	// here and again on each camera move.
 	if(d3.select("#transmutation-bg").empty()) {
 		root.append("g").attr("id", "transmutation-bg");
 	}
+	if(d3.select("#transmutation-hover").empty()) {
+		root.append("g").attr("id", "transmutation-hover");
+	}
 	if(d3.select("#transmutation-molecules").empty()) {
 		root.append("g").attr("id", "transmutation-molecules");
-	}
-	if(d3.select("#transmutation-preview").empty()) {
-		root.append("g").attr("id", "transmutation-preview");
 	}
 
 	renderBackgroundWindow();
@@ -223,12 +280,12 @@ function generateField(bg) {
 
 // convert a point local to the transmutation viewport into the hex cell
 // underneath it (research grid). pixel mapping used by renderBackgroundWindow:
-// px' = 60x + 30y, py' = -54y; inverse: y = -py'/54, x = (px' - 30y)/60
+// px' = 82x + 41y, py' = -71y; inverse: y = -py'/71, x = (px' - 41y)/82
 function researchHexAtPoint(localX, localY) {
 	var px = localX - gCameraX;
 	var py = localY - gCameraY;
-	var y = Math.round(-py / 54);
-	var x = Math.round((px - 30 * y) / 60);
+	var y = Math.round(-py / 71);
+	var x = Math.round((px - 41 * y) / 82);
 	if(x < gGridMinCoord || x > gGridMaxCoord || y < gGridMinCoord || y > gGridMaxCoord) {
 		return null;
 	}
@@ -246,8 +303,8 @@ function researchNearestFeature(localX, localY) {
 	var py = localY - gCameraY;
 	var x = hex.x;
 	var y = hex.y;
-	var pmx = 60 * x + 30 * y;
-	var pmy = -54 * y;
+	var pmx = 82 * x + 41 * y;
+	var pmy = -71 * y;
 	var primeDist2 = (px - pmx) * (px - pmx) + (py - pmy) * (py - pmy);
 	// the 6 bond centers around this cell (a bond sits at the midpoint between
 	// two adjacent hex cells, matching the background bond images)
@@ -262,8 +319,8 @@ function researchNearestFeature(localX, localY) {
 	var best = null;
 	var bestDist2 = primeDist2;
 	candidates.forEach(function(c) {
-		var bx = 60 * (c[0] + c[2]) / 2 + 30 * (c[1] + c[3]) / 2;
-		var by = -54 * (c[1] + c[3]) / 2;
+		var bx = 82 * (c[0] + c[2]) / 2 + 41 * (c[1] + c[3]) / 2;
+		var by = -71 * (c[1] + c[3]) / 2;
 		var dx = px - bx;
 		var dy = py - by;
 		var d2 = dx * dx + dy * dy;
@@ -278,65 +335,135 @@ function researchNearestFeature(localX, localY) {
 	return {"type" : "prime", "hex" : hex};
 }
 
-// draw the ghost preview for the current hover state in the research layer
+// find an existing prime of the edited molecule at a hex, or null
+function researchPrimeAt(x, y) {
+	for(var i = 0; i < gMoleculeObj.primes.length; i++) {
+		if(gMoleculeObj.primes[i].x == x && gMoleculeObj.primes[i].y == y) {
+			return gMoleculeObj.primes[i];
+		}
+	}
+	return null;
+}
+
+// find an existing bond of the edited molecule between two hexes (either
+// endpoint order matches), or null
+function researchBondAt(x1, y1, x2, y2) {
+	for(var i = 0; i < gMoleculeObj.bonds.length; i++) {
+		var b = gMoleculeObj.bonds[i];
+		if((b.x1 == x1 && b.y1 == y1 && b.x2 == x2 && b.y2 == y2)
+		|| (b.x1 == x2 && b.y1 == y2 && b.x2 == x1 && b.y2 == y1)) {
+			return b;
+		}
+	}
+	return null;
+}
+
+// right-click cancels the atom or bond under the cursor: the cursor picks the
+// nearest feature exactly like the hover highlight does, and only an existing
+// prime/bond of the edited molecule is removed.
+function researchRightClickRemove(clientX, clientY) {
+	var rect = $I("transmutation").getBoundingClientRect();
+	var state = researchNearestFeature(clientX - rect.left, clientY - rect.top);
+	if(!state) {
+		return;
+	}
+	if(state.type == "prime") {
+		var prime = researchPrimeAt(state.hex.x, state.hex.y);
+		if(prime) {
+			gMoleculeObj.primes.splice(gMoleculeObj.primes.indexOf(prime), 1);
+			updateMolecule(gMoleculeObj);
+		}
+	}
+	else {
+		var bond = researchBondAt(state.bond.x1, state.bond.y1, state.bond.x2, state.bond.y2);
+		if(bond) {
+			gMoleculeObj.bonds.splice(gMoleculeObj.bonds.indexOf(bond), 1);
+			updateMolecule(gMoleculeObj);
+		}
+	}
+	// the emptied spot may be re-highlighted without waiting for a move
+	refreshResearchHoverPreview();
+}
+
+// draw the hover highlight over the board pattern, below atoms and bonds:
+// a circle highlight over cell centers and a link highlight over bond slots.
+// it marks exactly the feature researchNearestFeature returns for clicks, so
+// the highlighted area and the click target always coincide.
 function renderResearchHoverPreview(state) {
-	var layer = d3.select("#transmutation-preview");
+	var layer = d3.select("#transmutation-hover");
 	if(layer.empty()) {
 		return;
 	}
-	layer.selectAll(".hover-preview").remove();
+	layer.selectAll(".hover-highlight").remove();
 	if(!state) {
 		return;
 	}
 	if(state.type == "bond") {
-		var fakeBond = new Bond(gSelectedBondType, state.bond.x1, state.bond.y1, state.bond.x2, state.bond.y2);
-		layer.append("image")
-		.datum(fakeBond)
-		.attr("class", "hover-preview")
-		.attr("width", scale(bondWidth))
-		.attr("height", scale(bondHeight))
-		.attr("x", bondX)
-		.attr("y", bondY)
-		.attr("transform", bondTransform)
-		.attr("xlink:href", bondImg)
-		.style("opacity", 0.45)
+		var cx = 82 * (state.bond.x1 + state.bond.x2) / 2 + 41 * (state.bond.y1 + state.bond.y2) / 2;
+		var cy = -71 * (state.bond.y1 + state.bond.y2) / 2;
+		var straight = state.bond.y2 == state.bond.y1;
+		var img = layer.append("image")
+		.attr("class", "hover-highlight")
+		.attr("width", 24)
+		.attr("height", straight ? 18 : 26)
+		.attr("x", cx - 12)
+		.attr("y", straight ? cy - 9 : cy - 13)
+		.attr("xlink:href", straight ? "img/grid_bond_hover_straight.png" : "img/grid_bond_hover_angle.png")
 		.style("pointer-events", "none");
+		if(!straight) {
+			// the two diagonal families are horizontal mirrors of each other:
+			// the sprite as-is fits the "\"-type links (same x coordinate on
+			// both cells); the "/"-type links use its horizontal flip, made
+			// about the bond centre so position is unchanged.
+			if(state.bond.x1 != state.bond.x2) {
+				img.attr("transform", "translate(" + (2 * cx) + " 0) scale(-1 1)");
+			}
+		}
 	}
 	else {
-		var fakePrime = new Prime(gSelectedPrimeType, state.hex.x, state.hex.y);
-		layer.append("use")
-		.datum(fakePrime)
-		.attr("class", "hover-preview")
-		.attr("width", scale(40))
-		.attr("height", scale(40))
+		layer.append("image")
+		.attr("class", "hover-highlight")
+		.datum({"x" : state.hex.x, "y" : state.hex.y})
+		.attr("width", scale(60))
+		.attr("height", scale(60))
 		.attr("x", primeX)
 		.attr("y", primeY)
-		.attr("xlink:href", primeHref)
-		.style("opacity", 0.45)
+		.attr("xlink:href", "img/grid_circle_hover.png")
 		.style("pointer-events", "none");
 	}
 }
 
-// update the semi-transparent ghost preview over the research editing area:
-// hovering a hex shows the selected atom, hovering a bond shows the selected bond.
+// update the hover highlight over the research editing area: hovering a hex
+// shows the cell highlight, hovering a bond shows the link highlight. an
+// existing atom/bond shows nothing (right-click there cancels it instead).
 function updateResearchHoverPreview(localX, localY) {
 	if(typeof hideProductionHoverPreview == 'function') {
 		hideProductionHoverPreview();
 	}
-	var layer = d3.select("#transmutation-preview");
+	var layer = d3.select("#transmutation-hover");
 	if(!layer.empty()) {
-		layer.selectAll(".hover-preview").remove();
+		layer.selectAll(".hover-highlight").remove();
 	}
 	if(!gEditMode.research) {
 		gHoverState = null;
 		return;
 	}
 	var state = researchNearestFeature(localX, localY);
+	if(state) {
+		if(state.type == "prime") {
+			if(researchPrimeAt(state.hex.x, state.hex.y)) {
+				state = null;
+			}
+		}
+		else if(researchBondAt(state.bond.x1, state.bond.y1, state.bond.x2, state.bond.y2)) {
+			state = null;
+		}
+	}
 	gHoverState = state;
 	renderResearchHoverPreview(state);
 }
 
-// route the ghost preview to the active editing mode (research/production)
+// route the hover highlight to the active editing mode (research/production)
 function updateHoverPreview(localX, localY) {
 	gHoverLocalX = localX;
 	gHoverLocalY = localY;
@@ -348,15 +475,12 @@ function updateHoverPreview(localX, localY) {
 	}
 }
 
-// hide the research ghost preview (keeps gHoverState untouched)
+// hide the research hover highlight (keeps gHoverState untouched)
 function hideResearchHoverPreview() {
-	var layer = d3.select("#transmutation-preview");
-	if(!layer.empty()) {
-		layer.selectAll(".hover-preview").remove();
-	}
+	d3.select("#transmutation-hover").selectAll(".hover-highlight").remove();
 }
 
-// hide the ghost preview in both layers and forget the hover position
+// hide the hover highlight in both modes and forget the hover position
 function hideHoverPreview() {
 	hideResearchHoverPreview();
 	if(typeof hideProductionHoverPreview == 'function') {
@@ -370,7 +494,7 @@ function toolboxPrimeClick(prime) {
 	d3.selectAll(".toolbox-prime").classed("toolbox-selected", false);
 	d3.select(".toolbox-" + prime).classed("toolbox-selected", true);
 	gSelectedPrimeType = prime;
-	// refresh the ghost preview in case the mouse is already over the field
+	// refresh the hover highlight in case the mouse is already over the field
 	if(gEditMode.research && gHoverLocalX != null) {
 		updateHoverPreview(gHoverLocalX, gHoverLocalY);
 	}
@@ -385,7 +509,7 @@ function toolboxBondClick(bond) {
 		gSelectedBondType[bond] = true;
 		d3.select(".toolbox-" + bond).classed("toolbox-bond-selected", true);
 	}
-	// refresh the ghost preview in case the mouse is already over a bond
+	// refresh the hover highlight in case the mouse is already over a bond
 	if(gEditMode.research && gHoverLocalX != null) {
 		updateHoverPreview(gHoverLocalX, gHoverLocalY);
 	}
@@ -561,8 +685,8 @@ function updateMolecule(molecule) {
   svgPrimes.enter()
   .append("use")
   .attr("class", "pr")
-  .attr("width", scale(40))
-  .attr("height", scale(40))
+  .attr("width", scale(60))
+  .attr("height", scale(60))
   .attr("x", primeX)
   .attr("y", primeY)
   .attr("xlink:href", primeHref)
@@ -588,8 +712,12 @@ function updateMolecule(molecule) {
   .attr("y", bondY)
   .attr("transform", bondTransform)
   .attr("width", scale(bondWidth))
-  .attr("height", scale(bondHeight))
-	.on("click", bondClick);
+  .attr("height", scale(bondHeight));
+
+  // redraw order: editing order must not affect stacking. bonds always sit
+  // above primes (an atom added after its bonds must not cover them).
+  svgBonds.raise();
+  svgPrimes.lower();
 }
 
 // update inst list
@@ -781,6 +909,7 @@ function initTransmutationPan() {
 		"active" : false,
 		"startX" : 0,
 		"startY" : 0,
+		"moved" : false,
 		"camX" : 0,
 		"camY" : 0,
 		"prodCamX" : 0,
@@ -793,6 +922,7 @@ function initTransmutationPan() {
 		}
 		e.preventDefault();
 		pan.active = true;
+		pan.moved = false;
 		container.classList.add("panning");
 		pan.startX = e.clientX;
 		pan.startY = e.clientY;
@@ -806,7 +936,7 @@ function initTransmutationPan() {
 		}
 	});
 
-	// semi-transparent ghost preview follows the mouse over the editing area
+	// hover highlight follows the mouse over the editing area
 	container.addEventListener("mousemove", function(e) {
 		var rect = container.getBoundingClientRect();
 		updateHoverPreview(e.clientX - rect.left, e.clientY - rect.top);
@@ -819,6 +949,13 @@ function initTransmutationPan() {
 			return;
 		}
 		e.preventDefault();
+		// remember that this right-button press became a drag, so its
+		// mouseup is not treated as a cancelling right-click
+		var mdx = e.clientX - pan.startX;
+		var mdy = e.clientY - pan.startY;
+		if(mdx * mdx + mdy * mdy > 25) {
+			pan.moved = true;
+		}
 		if(gEditMode.production) {
 			gProdCameraX = pan.prodCamX + (e.clientX - pan.startX);
 			gProdCameraY = pan.prodCamY + (e.clientY - pan.startY);
@@ -832,6 +969,11 @@ function initTransmutationPan() {
 	});
 	window.addEventListener("mouseup", function(e) {
 		if(pan.active) {
+			// a right-click that never turned into a drag cancels the atom
+			// or bond under the cursor (research mode only)
+			if(!pan.moved && e.button == 2 && gEditMode.research) {
+				researchRightClickRemove(e.clientX, e.clientY);
+			}
 			pan.active = false;
 			container.classList.remove("panning");
 		}
@@ -877,7 +1019,7 @@ function initTransmutationPan() {
 
 // resize function (kept for compatibility: recenters the camera and redraws)
 function resizeField(contentSize, moleculeSize) {
-	generateField(gBgMolecule);
+	generateField();
 	updateMolecule(gPuzzleObj.outputs[0] || new Molecule());
 }
 
