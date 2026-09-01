@@ -36,6 +36,70 @@
 				clear: both;
 				text-align: center;
 			}
+			#help-toggle {
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
+				width: 17px;
+				height: 17px;
+				margin-left: 10px;
+				vertical-align: middle;
+				border: 1.5px solid rgba(255, 255, 255, 0.35);
+				border-radius: 50%;
+				color: rgba(255, 255, 255, 0.6);
+				font-size: 11px;
+				font-weight: normal;
+				cursor: help;
+				user-select: none;
+			}
+			#help-toggle:hover {
+				background: rgba(255, 255, 255, 0.08);
+				color: rgba(255, 255, 255, 0.9);
+			}
+			.help-tooltip {
+				display: none;
+				position: absolute;
+				left: 50%;
+				top: 100%;
+				margin-top: 6px;
+				transform: translateX(-50%);
+				z-index: 100;
+				background: #111111;
+				border: solid 1px #bbbbbb;
+				padding: 8px 14px;
+				text-align: left;
+				font-size: 14px;
+				color: #cccccc;
+				white-space: nowrap;
+				box-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+			}
+			.help-tooltip .help-title {
+				font-weight: bold;
+				margin-bottom: 4px;
+				color: #99d6ff;
+			}
+			.help-tooltip ul {
+				margin: 0;
+				padding-left: 16px;
+			}
+			.help-tooltip li {
+				line-height: 1.6;
+			}
+			.help-tooltip b {
+				color: #99d6ff;
+			}
+			/* the hovered tab decides which tip is shown: research by default,
+			   production while the production tab is active (data-mode set by
+			   the tab switcher) */
+			#help-toggle:hover + #help-tooltip-research {
+				display: block;
+			}
+			body[data-mode="production"] #help-toggle:hover ~ #help-tooltip-research {
+				display: none;
+			}
+			body[data-mode="production"] #help-toggle:hover ~ #help-tooltip-production {
+				display: block;
+			}
 			#content-container {
 				position: absolute;
 				top: 60px;
@@ -404,6 +468,21 @@
 			#transmutation.panning * {
 				cursor: url('img/cursor_hand_closed.png') 50 50, pointer !important;
 			}
+			#transmutation.auto-scrolling,
+			#transmutation.auto-scrolling * {
+				cursor: url('img/cursor_hand_closed.png') 50 50, pointer !important;
+			}
+			.auto-scroll-indicator {
+				position: absolute;
+				width: 18px;
+				height: 18px;
+				margin: -9px 0 0 -9px;
+				border: 2px solid rgba(255, 255, 255, 0.85);
+				border-radius: 50%;
+				background: rgba(0, 0, 0, 0.55);
+				pointer-events: none;
+				z-index: 10;
+			}
 		</style>
 		<link rel="prefetch" href="img/regions/Small.png" />
 		<link rel="prefetch" href="img/regions/SmallWide.png" />
@@ -421,7 +500,34 @@
 		<link rel="prefetch" href="img/prod/vb3.png" />
 	</head>
 	<body>
-		<div id="big-title">Opus Magnum Puzzle Editor</div>
+		<div id="big-title"><span id="title-text">Opus Magnum Puzzle Editor</span><span id="help-toggle" title="操作提示">?</span>
+			<div id="help-tooltip-research" class="help-tooltip">
+				<div class="help-title">Controls (Molecular Research)</div>
+				<ul>
+					<li><b>Left-click</b> Place atoms/bonds; click an existing atom to change its type</li>
+					<li><b>Right-click</b> Cancel the atom or bond under the cursor</li>
+					<li><b>Middle-drag</b> Pan the board</li>
+					<li><b>Middle-click</b> Auto-scroll (any click / wheel / Esc exits)</li>
+					<li><b>Ctrl+wheel</b> Zoom (original scale is the maximum)</li>
+					<li><b>Wheel</b> Pan; Shift+wheel pans sideways</li>
+					<li><b>F10</b> Recenter on the origin</li>
+				</ul>
+			</div>
+			<div id="help-tooltip-production" class="help-tooltip">
+				<div class="help-title">Controls (Production Engine)</div>
+				<ul>
+					<li><b>Left-click</b> Place or cancel regions and vials; click cells to shape a pipe - offsets / input / output</li>
+					<li><b>Left-click a pipe shape block</b> Delete that block</li>
+					<li><b>Left-click</b> the same region/vial again cancels it</li>
+					<li><b>Middle-drag</b> Pan the board</li>
+					<li><b>Middle-click</b> Auto-scroll (any click / wheel / Esc exits)</li>
+					<li><b>Ctrl+wheel</b> Zoom (original scale is the maximum)</li>
+					<li><b>Wheel</b> Pan; Shift+wheel pans sideways</li>
+					<li><b>F10</b> Recenter on the origin</li>
+				</ul>
+			</div>
+		</div>
+		</div>
 		<div id="content-container">
 			<div id="tab-switch">
 				<a id="tab-research">Research</a> |

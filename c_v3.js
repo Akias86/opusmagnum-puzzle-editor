@@ -5,10 +5,7 @@
 
 // common functions
 function $Q(i){return document.querySelector(i);}
-function $A(i){return document.querySelectorAll(i);}
 function $I(i){return document.getElementById(i);}
-function $T(i){return document.getElementsByTagName(i);}
-function $C(i){return document.createElement(i);}
 
 // Inst constructor for arms, instructions, glyphs, berlo availabilities.
 function Inst(instArray) {
@@ -103,15 +100,6 @@ Bond.normal = function() {
 Bond.triplex = function() {
 	return { "n" : false, "r" : true, "k" : true, "y" : true };
 };
-
-function randomString(n, p) {
-	p = p || "0123456789";
-	var o = "";
-	for(var i=0; i<n; i++) {
-		o += p.charAt(Math.floor(Math.random() * p.length));
-	}
-	return o;
-}
 
 // convert BondType objects to binary data. returns number
 function bondTypeBinary(bt) {

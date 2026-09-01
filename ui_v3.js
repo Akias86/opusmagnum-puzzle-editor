@@ -9,6 +9,13 @@ var scale = d3.scaleLinear().domain([0,svgContentSize]).range([0, Math.min(svgHe
 // viewport. the board is conceptually infinite; these offsets pan the camera.
 var gCameraX = 0;
 var gCameraY = 0;
+// camera zoom: the whole board is scaled about the cursor; ctrl+wheel changes
+// the shared factor of both research and production boards. the original 1:1
+// scale is the maximum — zooming only shrinks (native pixel density never
+// upscales, so sprites stay crisp).
+var gZoom = 1;
+var gZoomMin = 0.25;
+var gZoomMax = 1;
 
 // the complete board spans [-127, 128] on both axial coordinates, forming a
 // parallelogram with acute corners at the top-right and bottom-left; grid
@@ -182,12 +189,14 @@ function renderBackgroundWindow() {
 	.attr("fill", "url(#board-bg-pattern)")
 	.attr("clip-path", "url(#board-bg-clip)")
 	.on("click", boardBackgroundClick);
-	// only the rect follows the camera; the pattern stays lattice-anchored
+	// only the rect follows the camera; the pattern stays lattice-anchored.
+	// the rect lives in the scaled root, so the viewport coverage is divided
+	// by the zoom and the margin is measured in root units.
 	layer.select(".board-bg-rect")
-	.attr("x", -gCameraX - margin)
-	.attr("y", -gCameraY - margin)
-	.attr("width", size.w + 2 * margin)
-	.attr("height", size.h + 2 * margin);
+	.attr("x", -gCameraX / gZoom - margin)
+	.attr("y", -gCameraY / gZoom - margin)
+	.attr("width", size.w / gZoom + 2 * margin)
+	.attr("height", size.h / gZoom + 2 * margin);
 
 	if(layer.select(".origin-highlight").empty()) {
 		// the origin cell (0,0) carries a permanent cell highlight
@@ -203,9 +212,11 @@ function renderBackgroundWindow() {
 	}
 }
 
-// left-click on the board background places the selected atom/bond at the
-// feature under the cursor (the old per-cell images did this; the single
-// board path replaces them). existing atoms/bonds are left untouched.
+// left-click on the board places the selected atom/bond at the feature under
+// the cursor, or relabels an existing atom there. the atoms/bonds layer is
+// pointer-transparent, so every click reaches this handler and the hit-test
+// is the same math the hover highlight uses (a spot near the edge of an atom
+// sprite highlights and places a neighbouring bond exactly like it shows).
 function boardBackgroundClick() {
 	var rect = $I("transmutation").getBoundingClientRect();
 	var state = researchNearestFeature(d3.event.clientX - rect.left, d3.event.clientY - rect.top);
@@ -213,7 +224,11 @@ function boardBackgroundClick() {
 		return;
 	}
 	if(state.type == "prime") {
-		if(!researchPrimeAt(state.hex.x, state.hex.y)) {
+		var prime = researchPrimeAt(state.hex.x, state.hex.y);
+		if(prime) {
+			primeClick(prime);
+		}
+		else {
 			bprimeClick(state.hex);
 		}
 	}
@@ -223,10 +238,32 @@ function boardBackgroundClick() {
 }
 
 // move the camera; the board background is static within the root group (the
-// pattern is anchored to the lattice, never re-rendered on pan)
+// pattern is anchored to the lattice, never re-rendered on pan), and the root
+// scale is the zoom factor.
 function applyCamera() {
-	d3.select("#transmutation-root").attr("transform", "translate(" + gCameraX + "," + gCameraY + ")");
+	d3.select("#transmutation-root").attr("transform", "translate(" + gCameraX + "," + gCameraY + ") scale(" + gZoom + ")");
 	renderBackgroundWindow();
+}
+
+// zoom the whole board about the viewport point (anchorX, anchorY): the cell
+// under the cursor stays put. both cameras are re-anchored on the same point
+// so the hidden tab keeps the same zoom when it becomes visible.
+function applyZoom(anchorX, anchorY, newZoom) {
+	if(newZoom < gZoomMin || newZoom > gZoomMax || newZoom == gZoom) {
+		return;
+	}
+	var z = gZoom;
+	var rx = (anchorX - gCameraX) / z;
+	var ry = (anchorY - gCameraY) / z;
+	var px = (anchorX - gProdCameraX) / z;
+	var py = (anchorY - gProdCameraY) / z;
+	gZoom = newZoom;
+	gCameraX = anchorX - rx * newZoom;
+	gCameraY = anchorY - ry * newZoom;
+	gProdCameraX = anchorX - px * newZoom;
+	gProdCameraY = anchorY - py * newZoom;
+	applyCamera();
+	applyProductionCamera();
 }
 
 // re-center the camera on the hex origin (0,0), i.e. the middle of the viewport
@@ -260,7 +297,7 @@ function generateField() {
 	if(root.empty()) {
 		root = svg.append("g").attr("id", "transmutation-root");
 	}
-	root.attr("transform", "translate(" + gCameraX + "," + gCameraY + ")");
+	root.attr("transform", "translate(" + gCameraX + "," + gCameraY + ") scale(" + gZoom + ")");
 
 	// layers keep z-order stable while panning: background pattern, then the
 	// hover highlight (below atoms/bonds), then molecules. order is enforced
@@ -282,8 +319,8 @@ function generateField() {
 // underneath it (research grid). pixel mapping used by renderBackgroundWindow:
 // px' = 82x + 41y, py' = -71y; inverse: y = -py'/71, x = (px' - 41y)/82
 function researchHexAtPoint(localX, localY) {
-	var px = localX - gCameraX;
-	var py = localY - gCameraY;
+	var px = (localX - gCameraX) / gZoom;
+	var py = (localY - gCameraY) / gZoom;
 	var y = Math.round(-py / 71);
 	var x = Math.round((px - 41 * y) / 82);
 	if(x < gGridMinCoord || x > gGridMaxCoord || y < gGridMinCoord || y > gGridMaxCoord) {
@@ -299,15 +336,17 @@ function researchNearestFeature(localX, localY) {
 	if(!hex) {
 		return null;
 	}
-	var px = localX - gCameraX;
-	var py = localY - gCameraY;
+	var px = (localX - gCameraX) / gZoom;
+	var py = (localY - gCameraY) / gZoom;
 	var x = hex.x;
 	var y = hex.y;
 	var pmx = 82 * x + 41 * y;
 	var pmy = -71 * y;
 	var primeDist2 = (px - pmx) * (px - pmx) + (py - pmy) * (py - pmy);
 	// the 6 bond centers around this cell (a bond sits at the midpoint between
-	// two adjacent hex cells, matching the background bond images)
+	// two adjacent hex cells, matching the background bond images). only bonds
+	// whose two endpoints are both on the board are offered: boundary atoms
+	// must not link outward past the grid range.
 	var candidates = [
 		[x, y, x + 1, y],
 		[x, y, x + 1, y - 1],
@@ -319,6 +358,12 @@ function researchNearestFeature(localX, localY) {
 	var best = null;
 	var bestDist2 = primeDist2;
 	candidates.forEach(function(c) {
+		if(c[0] < gGridMinCoord || c[0] > gGridMaxCoord
+		|| c[1] < gGridMinCoord || c[1] > gGridMaxCoord
+		|| c[2] < gGridMinCoord || c[2] > gGridMaxCoord
+		|| c[3] < gGridMinCoord || c[3] > gGridMaxCoord) {
+			return;
+		}
 		var bx = 82 * (c[0] + c[2]) / 2 + 41 * (c[1] + c[3]) / 2;
 		var by = -71 * (c[1] + c[3]) / 2;
 		var dx = px - bx;
@@ -674,6 +719,10 @@ function updateMolecule(molecule) {
 	// summon molecule layer (drawn above the background layer)
 	var svg = d3.select("#transmutation-molecules");
 
+  // atoms and bonds are pointer-transparent: clicks always fall through to
+  // the board background, whose hit-test matches the hover highlight
+  svg.style("pointer-events", "none");
+
   // update primes
   var svgPrimes = svg.selectAll(".pr").data(gMoleculeObj.primes);
 
@@ -689,35 +738,48 @@ function updateMolecule(molecule) {
   .attr("height", scale(60))
   .attr("x", primeX)
   .attr("y", primeY)
-  .attr("xlink:href", primeHref)
-  .on("click", primeClick);
+  .attr("xlink:href", primeHref);
 
-  // update bonds
-  var svgBonds = svg.selectAll(".bo").data(gMoleculeObj.bonds);
-
-  // --update
-  svgBonds
-  .attr("xlink:href", bondImg)
-  .attr("x", bondX)
-  .attr("y", bondY)
-  .attr("transform", bondTransform);
-  // --exit
+  // update bonds: each bond is a group holding one or two link images. when
+  // the normal link is selected along with any of the three colored links
+  // (r/k/y), the colored link (or their composed sprite) layers on top of the
+  // normal one; the single layers alone render exactly as before.
+  var bondLayers = function(bond) {
+      var t = bond.type;
+      var layers = [{ "href" : bondImg(bond), "bond" : bond }];
+      if(t.n && (t.r || t.k || t.y)) {
+          layers.push({
+              "href" : (t.r && t.k && t.y) ? "img/triplex.png"
+                     : "img/" + (t.r ? "r" : "") + (t.k ? "k" : "") + (t.y ? "y" : "") + ".png",
+              "bond" : bond
+          });
+      }
+      return layers;
+  };
+  var svgBonds = svg.selectAll("g.bo").data(gMoleculeObj.bonds);
+  // --exit: removed bonds must vanish from the DOM, or their ghost images
+  // would keep blocking clicks on the underlying board
   svgBonds.exit().remove();
-  // --enter
-  svgBonds.enter()
-  .append("image")
+  var bondSel = svgBonds.enter().append("g")
   .attr("class", "bo")
-  .attr("xlink:href", bondImg)
-  .attr("x", bondX)
-  .attr("y", bondY)
-  .attr("transform", bondTransform)
+  .merge(svgBonds);
+  var bondImgSel = bondSel.selectAll("image").data(bondLayers);
+  bondImgSel.exit().remove();
+  bondImgSel.enter().append("image")
+  .merge(bondImgSel)
+  .attr("class", "bond-img")
+  .attr("xlink:href", function(d) { return d.href; })
+  .attr("x", function(d) { return bondX(d.bond); })
+  .attr("y", function(d) { return bondY(d.bond); })
+  .attr("transform", function(d) { return bondTransform(d.bond); })
   .attr("width", scale(bondWidth))
   .attr("height", scale(bondHeight));
 
   // redraw order: editing order must not affect stacking. bonds always sit
-  // above primes (an atom added after its bonds must not cover them).
-  svgBonds.raise();
-  svgPrimes.lower();
+  // above primes (an atom added after its bonds must not cover them); select
+  // the whole classes so new enter nodes join in too.
+  svg.selectAll("g.bo").raise();
+  svg.selectAll(".pr").lower();
 }
 
 // update inst list
@@ -902,8 +964,10 @@ function loadFile(fp) {
 	fr.readAsArrayBuffer(fp);
 }
 
-// right-button drag (or mouse wheel) to pan the infinite boards.
-// research moves the molecule camera; production moves its own camera.
+// middle-button drag pans the infinite boards; a plain middle-click toggles
+// browser-style auto-scroll (keep moving the mouse without holding anything),
+// ctrl+wheel zooms the whole board about the cursor. research moves the
+// molecule camera; production moves its own camera.
 function initTransmutationPan() {
 	var pan = {
 		"active" : false,
@@ -915,11 +979,107 @@ function initTransmutationPan() {
 		"prodCamX" : 0,
 		"prodCamY" : 0
 	};
+	// auto-scroll mode: after a plain middle-click the board keeps panning at
+	// a speed proportional to how far the mouse moved away from the click
+	// anchor (browser-style: it scrolls continuously even when the mouse is
+	// still); any click, wheel or Escape ends it.
+	var AUTO_SCROLL_DEAD = 8;    // px around the anchor: no scroll inside
+	var AUTO_SCROLL_RATE = 6;    // px per second per px of distance
+	var autoScroll = {
+		"active" : false,
+		"anchorX" : 0,
+		"anchorY" : 0,
+		"rateX" : 0,
+		"rateY" : 0,
+		"lastTime" : 0,
+		"rafId" : null,
+		"tick" : function(now) {
+			if(!autoScroll.active) {
+				return;
+			}
+			var dt = Math.min(0.1, (now - autoScroll.lastTime) / 1000);
+			autoScroll.lastTime = now;
+			if(autoScroll.rateX != 0 || autoScroll.rateY != 0) {
+				moveCameras(autoScroll.rateX * dt, autoScroll.rateY * dt);
+			}
+			autoScroll.rafId = requestAnimationFrame(autoScroll.tick);
+		}
+	};
 	var container = $I("transmutation");
-	container.addEventListener("mousedown", function(e) {
-		if(e.button != 2) {
+	if(container.querySelector(".auto-scroll-indicator") == null) {
+		var ind = document.createElement("div");
+		ind.className = "auto-scroll-indicator";
+		ind.style.display = "none";
+		container.appendChild(ind);
+	}
+
+	function moveCameras(dx, dy) {
+		if(dx == 0 && dy == 0) {
 			return;
 		}
+		if(gEditMode.production) {
+			gProdCameraX += dx;
+			gProdCameraY += dy;
+			applyProductionCamera();
+		}
+		else {
+			gCameraX += dx;
+			gCameraY += dy;
+			applyCamera();
+		}
+	}
+
+	function startAutoScroll(clientX, clientY) {
+		autoScroll.active = true;
+		autoScroll.anchorX = clientX;
+		autoScroll.anchorY = clientY;
+		autoScroll.rateX = 0;
+		autoScroll.rateY = 0;
+		autoScroll.lastTime = performance.now();
+		var ind = container.querySelector(".auto-scroll-indicator");
+		if(ind) {
+			var r = container.getBoundingClientRect();
+			ind.style.left = (clientX - r.left) + "px";
+			ind.style.top = (clientY - r.top) + "px";
+			ind.style.display = "block";
+		}
+		container.classList.add("auto-scrolling");
+		autoScroll.rafId = requestAnimationFrame(autoScroll.tick);
+	}
+
+	function stopAutoScroll() {
+		if(!autoScroll.active) {
+			return;
+		}
+		autoScroll.active = false;
+		if(autoScroll.rafId) {
+			cancelAnimationFrame(autoScroll.rafId);
+			autoScroll.rafId = null;
+		}
+		autoScroll.rateX = 0;
+		autoScroll.rateY = 0;
+		var ind = container.querySelector(".auto-scroll-indicator");
+		if(ind) {
+			ind.style.display = "none";
+		}
+		container.classList.remove("auto-scrolling");
+	}
+
+	container.addEventListener("mousedown", function(e) {
+		if(autoScroll.active) {
+			// any button press ends the auto-scroll mode (and does not start
+			// a pan/cancel action itself); middle presses must also suppress
+			// the browser's built-in auto-scroll.
+			stopAutoScroll();
+			if(e.button == 1) {
+				e.preventDefault();
+			}
+			return;
+		}
+		if(e.button != 1) {
+			return;
+		}
+		// stop the browser's built-in middle-button auto-scroll
 		e.preventDefault();
 		pan.active = true;
 		pan.moved = false;
@@ -945,12 +1105,30 @@ function initTransmutationPan() {
 		hideHoverPreview();
 	});
 	window.addEventListener("mousemove", function(e) {
+		if(autoScroll.active) {
+			// browser-style: the pan speed grows linearly with the distance
+			// from the anchor and points away from it; the small dead zone
+			// around the anchor dot matches the indicator center.
+			var adx = e.clientX - autoScroll.anchorX;
+			var ady = e.clientY - autoScroll.anchorY;
+			var dist = Math.sqrt(adx * adx + ady * ady);
+			if(dist > AUTO_SCROLL_DEAD) {
+				var speed = AUTO_SCROLL_RATE * dist;
+				autoScroll.rateX = (adx / dist) * speed;
+				autoScroll.rateY = (ady / dist) * speed;
+			}
+			else {
+				autoScroll.rateX = 0;
+				autoScroll.rateY = 0;
+			}
+			return;
+		}
 		if(!pan.active) {
 			return;
 		}
 		e.preventDefault();
-		// remember that this right-button press became a drag, so its
-		// mouseup is not treated as a cancelling right-click
+		// remember that this middle-button press became a drag, so its
+		// mouseup is not treated as an auto-scroll toggle
 		var mdx = e.clientX - pan.startX;
 		var mdy = e.clientY - pan.startY;
 		if(mdx * mdx + mdy * mdy > 25) {
@@ -968,29 +1146,45 @@ function initTransmutationPan() {
 		}
 	});
 	window.addEventListener("mouseup", function(e) {
-		if(pan.active) {
-			// a right-click that never turned into a drag cancels the atom
-			// or bond under the cursor (research mode only)
-			if(!pan.moved && e.button == 2 && gEditMode.research) {
-				researchRightClickRemove(e.clientX, e.clientY);
+		if(pan.active && e.button == 1) {
+			// a middle-button press that never turned into a drag toggles the
+			// auto-scroll mode
+			if(!pan.moved) {
+				if(autoScroll.active) {
+					stopAutoScroll();
+				}
+				else {
+					startAutoScroll(e.clientX, e.clientY);
+				}
 			}
 			pan.active = false;
 			container.classList.remove("panning");
+		}
+		if(e.button == 2 && gEditMode.research) {
+			researchRightClickRemove(e.clientX, e.clientY);
 		}
 	});
 	container.addEventListener("contextmenu", function(e) {
 		e.preventDefault();
 	});
 	container.addEventListener("wheel", function(e) {
+		e.preventDefault();
+		stopAutoScroll();
+		if(e.ctrlKey) {
+			// ctrl+wheel zooms the whole board about the cursor
+			var rect = container.getBoundingClientRect();
+			var delta = e.deltaY * (e.deltaMode == 1 ? 16 : e.deltaMode == 2 ? 100 : 1);
+			applyZoom(e.clientX - rect.left, e.clientY - rect.top, gZoom * Math.exp(-delta * 0.0015));
+			return;
+		}
+		// plain wheel pans (both axes); shift routes the vertical delta to the
+		// horizontal axis for sideways panning
 		var dx = e.deltaX;
 		var dy = e.deltaY;
 		if(e.shiftKey) {
-			// shift + wheel scrolls horizontally; browsers report the vertical
-			// delta even when shift is held, so route it to the x axis.
 			dx = dy;
 			dy = 0;
 		}
-		e.preventDefault();
 		if(gEditMode.production) {
 			gProdCameraX -= dx;
 			gProdCameraY -= dy;
@@ -1005,7 +1199,10 @@ function initTransmutationPan() {
 
 	// F10: return to the hex origin (center of the viewport)
 	window.addEventListener("keydown", function(e) {
-		if(e.key == "F10") {
+		if(e.key == "Escape") {
+			stopAutoScroll();
+		}
+		else if(e.key == "F10") {
 			e.preventDefault();
 			if(gEditMode.production) {
 				centerProduction();
@@ -1015,12 +1212,6 @@ function initTransmutationPan() {
 			}
 		}
 	});
-}
-
-// resize function (kept for compatibility: recenters the camera and redraws)
-function resizeField(contentSize, moleculeSize) {
-	generateField();
-	updateMolecule(gPuzzleObj.outputs[0] || new Molecule());
 }
 
 function duplicateCurrentToReagent() {

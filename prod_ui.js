@@ -142,12 +142,17 @@ var gProdCameraY = 0;
 // render only the production background hexes visible under the current
 // camera, clamped to the file format's coordinate range (same as research).
 function renderProductionBackgroundWindow() {
+    if(d3.select("#production-bg").empty()) {
+        return;
+    }
     var size = transmutationViewSize();
     var margin = 120;
-    var left = -gProdCameraX - margin;
-    var right = (size.w - gProdCameraX) + margin;
-    var top = -gProdCameraY - margin;
-    var bottom = (size.h - gProdCameraY) + margin;
+    // the hexes live in the scaled root, so the visible window is measured in
+    // root units (divide the viewport coverage by the zoom)
+    var left = (-gProdCameraX / gZoom) - margin;
+    var right = ((size.w - gProdCameraX) / gZoom) + margin;
+    var top = (-gProdCameraY / gZoom) - margin;
+    var bottom = ((size.h - gProdCameraY) / gZoom) + margin;
 
     // production pixel mapping: px' = 41x + 20.5y, py' = -35.5y
     // inverse: y = -py'/35.5, x = px'/41 - y/2
@@ -200,13 +205,14 @@ function renderProductionBackgroundWindow() {
 
 // move the production camera and redraw the visible background window
 function applyProductionCamera() {
-    d3.select("#production-root").attr("transform", "translate(" + gProdCameraX + "," + gProdCameraY + ")");
+    d3.select("#production-root").attr("transform", "translate(" + gProdCameraX + "," + gProdCameraY + ") scale(" + gZoom + ")");
     renderProductionBackgroundWindow();
 }
 
 // functions
 function showResearchTab() {
     hideHoverPreview();
+    document.body.dataset.mode = "research";
     d3.selectAll("#research-area-left,#transmutation-svg").style("display","block");
     d3.selectAll("#production-area,#production-svg").style("display","none");
     d3.select("#transmutation").style("overflow", "hidden");
@@ -230,6 +236,7 @@ function centerProduction() {
 
 function showProductionTab() {
     hideHoverPreview();
+    document.body.dataset.mode = "production";
     d3.selectAll("#research-area-left,#transmutation-svg").style("display","none");
     d3.selectAll("#production-area,#production-svg").style("display","block");
     d3.select("#transmutation").style("overflow", "hidden");
@@ -336,7 +343,7 @@ function updateProductionField(param) {
     if(root.empty()) {
         root = svg.append("g").attr("id", "production-root");
     }
-    root.attr("transform", "translate(" + gProdCameraX + "," + gProdCameraY + ")");
+    root.attr("transform", "translate(" + gProdCameraX + "," + gProdCameraY + ") scale(" + gZoom + ")");
     if(d3.select("#production-bg").empty()) {
         root.append("g").attr("id", "production-bg");
     }
@@ -678,8 +685,8 @@ function addPipe() {
 // it. production mapping: px' = 41x + 20.5y, py' = -35.5y; inverse:
 // y = -py'/35.5, x = px'/41 - y/2 (see renderProductionBackgroundWindow)
 function productionHexAtPoint(localX, localY) {
-    var px = localX - gProdCameraX;
-    var py = localY - gProdCameraY;
+    var px = (localX - gProdCameraX) / gZoom;
+    var py = (localY - gProdCameraY) / gZoom;
     var y = Math.round(-py / scaleProd(prodRowSpace));
     var x = Math.round(px / scaleProd(prodCellW) - 0.5 * y);
     if(x < gGridMinCoord || x > gGridMaxCoord || y < gGridMinCoord || y > gGridMaxCoord) {
