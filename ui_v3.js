@@ -114,16 +114,29 @@ function transmutationViewSize() {
 	return {"w" : c.clientWidth, "h" : c.clientHeight};
 }
 
-// the board background is the seamless lattice pattern (img/grid_tile.png at
-// its native 82x142 px period, one column wide and two rows tall) clipped to
-// the full board parallelogram — the grid coordinate range [-127..128] on
-// both axial axes, edges half a cell outside the outermost cells (so the
-// outer link loops are cut at their midpoints, like in-game).
+// the board background is built from a 3x3 sheet of self-contained 82x71
+// tiles (master artwork in tmp/, exported per-window as the nine
+// img/grid_tile_rc.png images): sheet rows are the y situations
+// (top edge / interior / bottom edge — y=128 is the screen-up edge) and
+// sheet columns the x situations (left edge / interior / right edge), so
+// every cell paints the tile matching its position context. the circle slot
+// of each tile sits at window-local (41, 35.5), concentric with the atom
+// sprites. the whole thing is clipped to the full board parallelogram — the
+// grid coordinate range [-127..128] on both axial axes, edges half a cell
+// outside the outermost cells (so the outer link loops are cut at their
+// midpoints, like in-game).
 //
-// implementation: the pattern and the clip path (both anchored to the root
-// coordinate system) are built once; on every camera move only a viewport-
-// sized rect is repositioned. a huge filled path is avoided because browser
-// rasterization limits would clip it.
+// implementation: eighteen patterns — the nine contexts x two row parities —
+// each spanning exactly one window (82x71) of the sheet, so a pattern holds
+// a single unclipped image and nothing else (clip-path inside pattern
+// content is not rendered reliably). the 41px interleave of the odd rows is
+// carried by the odd patterns' x anchor instead. the nine board bands
+// (interior, four edge bands, four corners) are each drawn twice — an
+// even-row path and an odd-row path, one rectangle subpath per row — filled
+// with their context's pattern for that parity. everything is built once
+// and anchored to the root coordinate system; on camera moves only the root
+// transform changes, exactly like the atom sprites (which already work at
+// the same ±15000px scale).
 
 // cell-space -> root pixel space (same as primeX/primeY without the sprite
 // offset, i.e. cell centers)
@@ -143,10 +156,44 @@ function boardBackgroundPath() {
 	}).join(" L ") + " Z";
 }
 
-// the tile contains a lattice node at source pixel (40.5, 70.5) — the phase
-// of cell (0,0) at the tile's native scale (82 px per column, 71 px per row)
-var BOARD_TILE_X = -40.5;
-var BOARD_TILE_Y = -70.5;
+// background window geometry: each cell's background window is an 82x71
+// rect centered on the cell centre, so its top-left corner sits at the
+// centre + (BOARD_ANCHOR_X, BOARD_ANCHOR_Y); calibration may nudge
+// BOARD_ANCHOR_Y by ±0.5 if the sheet's circle centre is a pixel off.
+var BOARD_ANCHOR_X = -41;
+var BOARD_ANCHOR_Y = -35.5;
+
+// parallelogram covering all background windows of the cell range
+// [x1..x2] x [y1..y2] (y1 < y2; +y is screen-up, so the top edge of the
+// region follows y2 and the bottom edge follows y1)
+function boardRegionPath(x1, x2, y1, y2) {
+	var ox = BOARD_ANCHOR_X;
+	var oy = BOARD_ANCHOR_Y;
+	var pts = [
+		[82 * x1 + 41 * y2 + ox, -71 * y2 + oy],
+		[82 * (x2 + 1) + 41 * y2 + ox, -71 * y2 + oy],
+		[82 * (x2 + 1) + 41 * y1 + ox, -71 * y1 + oy + 71],
+		[82 * x1 + 41 * y1 + ox, -71 * y1 + oy + 71]
+	];
+	return "M " + pts.map(function(p) {
+		return p[0] + " " + p[1];
+	}).join(" L ") + " Z";
+}
+
+// path holding one rectangle subpath per window row of the cell range
+// [x1..x2] x [y1..y2] whose coordinate matches parity (0 = even y, 1 = odd
+// y); even and odd rows sit 41px apart in x, so the two parities are drawn
+// as separate paths, each filled by its own pattern anchor
+function boardRowStripPath(x1, x2, y1, y2, parity) {
+	var d = "";
+	for(var y = y1; y <= y2; y++) {
+		if((y & 1) !== parity) {
+			continue;
+		}
+		d += boardRegionPath(x1, x2, y, y);
+	}
+	return d;
+}
 
 function renderBackgroundWindow() {
 	var layer = d3.select("#transmutation-bg");
@@ -154,49 +201,74 @@ function renderBackgroundWindow() {
 		return;
 	}
 	var defs = d3.select("#transmutation-svg").select("defs");
-	if(defs.select("pattern#board-bg-pattern").empty()) {
-		var bppat = defs.append("pattern")
-		.attr("id", "board-bg-pattern")
-		.attr("patternUnits", "userSpaceOnUse")
-		.attr("width", 82)
-		.attr("height", 142);
-		// the image is one full native period (82x142), but its phase is offset
-		// by the tile's (0,0)-node (BOARD_TILE_X/Y), so lay a 2x2 grid of copies
-		// to cover the whole pattern tile; adjacent copies meet exactly at the
-		// period, so the wrap is seamless.
-		for(var i = 0; i < 2; i++) {
-			for(var j = 0; j < 2; j++) {
-				bppat.append("image")
-				.attr("xlink:href", "img/grid_tile.png")
-				.attr("x", BOARD_TILE_X + i * 82)
-				.attr("y", BOARD_TILE_Y + j * 142)
-				.attr("width", 82)
-				.attr("height", 142);
-			}
-		}
-	}
 	if(defs.select("clipPath#board-bg-clip").empty()) {
 		defs.append("clipPath")
 		.attr("id", "board-bg-clip")
 		.append("path")
 		.attr("d", boardBackgroundPath());
 	}
-	var size = transmutationViewSize();
-	var margin = 120;
-	layer.selectAll(".board-bg-rect").data([null])
-	.enter().append("rect")
-	.attr("class", "board-bg-rect")
-	.attr("fill", "url(#board-bg-pattern)")
-	.attr("clip-path", "url(#board-bg-clip)")
-	.on("click", boardBackgroundClick);
-	// only the rect follows the camera; the pattern stays lattice-anchored.
-	// the rect lives in the scaled root, so the viewport coverage is divided
-	// by the zoom and the margin is measured in root units.
-	layer.select(".board-bg-rect")
-	.attr("x", -gCameraX / gZoom - margin)
-	.attr("y", -gCameraY / gZoom - margin)
-	.attr("width", size.w / gZoom + 2 * margin)
-	.attr("height", size.h / gZoom + 2 * margin);
+	// build the eighteen context patterns once — nine contexts x two row
+	// parities. each tile is exactly one 82x71 window of the sheet, stored
+	// as its own cropped image (img/grid_tile_rc.png): pattern content is
+	// NOT clipped to the tile by the renderer, so a tile may only ever hold
+	// image data that already matches its period. the odd-row patterns are
+	// anchored 41px right so their windows land on the interleaved odd rows.
+	// the anchor phases are exact: even rows have their window left edge at
+	// x = -41 (mod 82), odd rows at x = 0 (mod 82), and every row's window
+	// top at y = -35.5 (mod 71).
+	if(defs.select("pattern#board-tile-00-0").empty()) {
+		for(var r = 0; r < 3; r++) {
+			for(var c = 0; c < 3; c++) {
+				for(var parity = 0; parity < 2; parity++) {
+					defs.append("pattern")
+					.attr("id", "board-tile-" + r + c + "-" + parity)
+					.attr("patternUnits", "userSpaceOnUse")
+					.attr("x", BOARD_ANCHOR_X + 41 * parity)
+					.attr("y", BOARD_ANCHOR_Y)
+					.attr("width", 82)
+					.attr("height", 71)
+					.append("image")
+					.attr("xlink:href", "img/grid_tile_" + r + c + ".png")
+					.attr("x", 0)
+					.attr("y", 0)
+					.attr("width", 82)
+					.attr("height", 71);
+				}
+			}
+		}
+	}
+	// static board bands: the interior, the four edge bands and the four
+	// corners; every cell of a band shares one context, so each band is
+	// drawn twice — an even-row and an odd-row path of per-row rectangle
+	// subpaths — filled with the context's pattern for that parity and
+	// clipped to the board outline. the bands live in the scaled root and
+	// only move with the camera transform, so they are placed once.
+	if(layer.select(".board-bg-el").empty()) {
+		var lo = gGridMinCoord;
+		var hi = gGridMaxCoord;
+		// [x1, x2, y1, y2, sheet row, sheet col]
+		var bands = [
+			[lo + 1, hi - 1, lo + 1, hi - 1, 1, 1],
+			[lo + 1, hi - 1, hi, hi, 0, 1],
+			[lo + 1, hi - 1, lo, lo, 2, 1],
+			[lo, lo, lo + 1, hi - 1, 1, 0],
+			[hi, hi, lo + 1, hi - 1, 1, 2],
+			[lo, lo, hi, hi, 0, 0],
+			[hi, hi, hi, hi, 0, 2],
+			[lo, lo, lo, lo, 2, 0],
+			[hi, hi, lo, lo, 2, 2]
+		];
+		bands.forEach(function(b) {
+			for(var parity = 0; parity < 2; parity++) {
+				layer.append("path")
+				.attr("class", "board-bg-el")
+				.attr("d", boardRowStripPath(b[0], b[1], b[2], b[3], parity))
+				.attr("fill", "url(#board-tile-" + b[4] + b[5] + "-" + parity + ")")
+				.attr("clip-path", "url(#board-bg-clip)")
+				.on("click", boardBackgroundClick);
+			}
+		});
+	}
 
 	if(layer.select(".origin-highlight").empty()) {
 		// the origin cell (0,0) carries a permanent cell highlight
