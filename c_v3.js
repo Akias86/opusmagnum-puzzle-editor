@@ -127,8 +127,8 @@ function instBinary(inst) {
 	        0x01 * inst.animismus
 	      + 0x02 * inst.disposal
 	      + 0x04 * inst.quintessence
-	      + 0x08 * inst.division
-	      + 0x10 * inst.rejection
+	      + 0x08 * inst.rejection
+	      + 0x10 * inst.division
 	      + 0x20 * inst.proliferation
 	      + 0x40 * inst.grabturn
 	      + 0x80 * inst.drop,
@@ -320,8 +320,8 @@ function instParse(ia) {
 		"animismus"      : !!(0x01 & ia[2]),
 		"disposal"       : !!(0x02 & ia[2]),
 		"quintessence"   : !!(0x04 & ia[2]),
-		"division"       : !!(0x08 & ia[2]),
-		"rejection"      : !!(0x10 & ia[2]),
+		"rejection"      : !!(0x08 & ia[2]),
+		"division"       : !!(0x10 & ia[2]),
 		"proliferation"  : !!(0x20 & ia[2]),
 		"grabturn"       : !!(0x40 & ia[2]),
 		"drop"           : !!(0x80 & ia[2]),
