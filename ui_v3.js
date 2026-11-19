@@ -24,7 +24,7 @@ var gZoomMax = 1;
 var gGridMinCoord = -127;
 var gGridMaxCoord = 128;
 
-// sprite-sheet (img/atoms_atlas.png) layout: 4x4 grid of 120px cells
+// sprite-sheet (img/atoms_atlas.png) layout: 4x4 grid of native 60px cells
 var gAtlasOrder = ["salt","air","earth","fire","water","quicksilver","gold","silver","copper","iron","tin","lead","vitae","mors","repeat","quintessence"];
 var gAtlasCell = {};
 gAtlasOrder.forEach(function(p, i) { gAtlasCell[p] = { col: i % 4, row: Math.floor(i / 4) }; });
